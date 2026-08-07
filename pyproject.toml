@@ -1,0 +1,45 @@
+[project]
+name = "aura"
+version = "0.1.0"
+description = "AURA — Adaptive Unified Reasoning Assistant. Plataforma cognitiva modular."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+aura = "aura:main"
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aura"]
+
+[tool.uv_build]
+package-dir = "src"
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.1",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py314"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+mypy_path = ["src"]
+files = ["src/aura"]
+no_implicit_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+minversion = "9.0"
+addopts = "-ra"
