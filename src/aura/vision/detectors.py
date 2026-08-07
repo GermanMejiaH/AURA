@@ -47,26 +47,22 @@ class VisualAnalysisResult:
 # Interfaces
 class PersonDetector(ABC):
     @abstractmethod
-    def detect_persons(self, frame: FrameData) -> list[DetectedPerson]:
-        ...
+    def detect_persons(self, frame: FrameData) -> list[DetectedPerson]: ...
 
 
 class ObjectDetector(ABC):
     @abstractmethod
-    def detect_objects(self, frame: FrameData) -> list[DetectedObject]:
-        ...
+    def detect_objects(self, frame: FrameData) -> list[DetectedObject]: ...
 
 
 class FaceRecognizer(ABC):
     @abstractmethod
-    def recognize_faces(self, frame: FrameData) -> list[DetectedFace]:
-        ...
+    def recognize_faces(self, frame: FrameData) -> list[DetectedFace]: ...
 
 
 class OCRProcessor(ABC):
     @abstractmethod
-    def extract_text(self, frame: FrameData) -> list[OCRResult]:
-        ...
+    def extract_text(self, frame: FrameData) -> list[OCRResult]: ...
 
 
 # Mock Implementations

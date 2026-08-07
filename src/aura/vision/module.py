@@ -60,9 +60,7 @@ class VisionModule(BaseModule):
             else MockFaceRecognizer(event_bus=event_bus)
         )
         self.ocr_processor = (
-            ocr_processor
-            if ocr_processor is not None
-            else MockOCRProcessor(event_bus=event_bus)
+            ocr_processor if ocr_processor is not None else MockOCRProcessor(event_bus=event_bus)
         )
 
     def on_initialize(self) -> None:

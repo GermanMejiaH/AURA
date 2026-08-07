@@ -21,20 +21,14 @@ class WorldQueryEngine:
     ) -> list[Entity]:
         results: list[Entity] = []
 
-        type_str = (
-            entity_type.value if isinstance(entity_type, EntityType) else entity_type
-        )
+        type_str = entity_type.value if isinstance(entity_type, EntityType) else entity_type
 
         for entity in self._cwm.all_entities():
             if entity.confidence < min_confidence:
                 continue
 
             if type_str is not None:
-                ent_type = (
-                    entity.type.value
-                    if isinstance(entity.type, EntityType)
-                    else entity.type
-                )
+                ent_type = entity.type.value if isinstance(entity.type, EntityType) else entity.type
                 if ent_type != type_str:
                     continue
 
@@ -63,9 +57,7 @@ class WorldQueryEngine:
         if target_entity is None:
             return None
 
-        relations = self._cwm.get_relations_for_entity(
-            target_entity.id, direction="outgoing"
-        )
+        relations = self._cwm.get_relations_for_entity(target_entity.id, direction="outgoing")
         for rel in relations:
             rel_type = (
                 rel.relation_type.value
@@ -106,16 +98,10 @@ class WorldQueryEngine:
         direction: str = "all",
     ) -> list[Entity]:
         """Find neighboring entities connected to entity_id by relation_type."""
-        relations = self._cwm.get_relations_for_entity(
-            entity_id, direction=direction
-        )
+        relations = self._cwm.get_relations_for_entity(entity_id, direction=direction)
         target_ids: set[str] = set()
 
-        type_str = (
-            relation_type.value
-            if isinstance(relation_type, RelationType)
-            else relation_type
-        )
+        type_str = relation_type.value if isinstance(relation_type, RelationType) else relation_type
 
         for rel in relations:
             r_type = (

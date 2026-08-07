@@ -39,14 +39,10 @@ class AudioModule(BaseModule):
             else MockWakeWordDetector(event_bus=event_bus)
         )
         self.stt = (
-            stt_provider
-            if stt_provider is not None
-            else MockSTTProvider(event_bus=event_bus)
+            stt_provider if stt_provider is not None else MockSTTProvider(event_bus=event_bus)
         )
         self.tts = (
-            tts_provider
-            if tts_provider is not None
-            else MockTTSProvider(event_bus=event_bus)
+            tts_provider if tts_provider is not None else MockTTSProvider(event_bus=event_bus)
         )
         self.silence_detector = SilenceDetector(event_bus=event_bus)
 

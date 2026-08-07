@@ -30,9 +30,7 @@ class MemoryRetrievalEngine:
         episodes = self.episodic.search_episodes(search_text, limit=limit)
         facts = self.semantic.query_facts(subject=search_text)
         prefs = [
-            p
-            for p in self.preferences.all_preferences()
-            if search_text.lower() in p.key.lower()
+            p for p in self.preferences.all_preferences() if search_text.lower() in p.key.lower()
         ]
 
         result = MemoryQueryResult(episodes=episodes, facts=facts, preferences=prefs)

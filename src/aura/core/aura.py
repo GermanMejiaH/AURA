@@ -127,9 +127,7 @@ class AURA:
         logger = get_logger("AURA")
         logger.info(f"Shutdown requested: {reason}")
         try:
-            self.event_bus.publish(
-                SystemShutdownRequested(source="AURA", reason=reason)
-            )
+            self.event_bus.publish(SystemShutdownRequested(source="AURA", reason=reason))
         except Exception:
             pass
         self._shutdown_event.set()
@@ -168,9 +166,7 @@ class AURA:
                     logger.exception("Failed to stop modules")
 
             try:
-                self.event_bus.publish(
-                    SystemStopped(source="AURA", exit_code=0)
-                )
+                self.event_bus.publish(SystemStopped(source="AURA", exit_code=0))
             except Exception:
                 pass
 
@@ -251,9 +247,7 @@ class AURA:
         self.container.register(ModuleManager, instance=self.module_manager)
         self.diagnostics.module_manager = self.module_manager
 
-        if self.options.enable_scheduler or self.config.get_typed(
-            "scheduler.enabled", bool, True
-        ):
+        if self.options.enable_scheduler or self.config.get_typed("scheduler.enabled", bool, True):
             self.scheduler = Scheduler(config=self.config)
             self.container.register(Scheduler, instance=self.scheduler)
             try:
@@ -440,11 +434,12 @@ class AURA:
         if threading.current_thread() is not threading.main_thread():
             return
         try:
+
             def _handler(signum: int, frame: Any) -> None:
                 self.request_shutdown(reason=f"signal_{signum}")
 
             signal.signal(signal.SIGINT, _handler)
             signal.signal(signal.SIGTERM, _handler)
             self._signal_handlers_installed = True
-        except (ValueError, OSError, AttributeError):
+        except ValueError, OSError, AttributeError:
             pass

@@ -19,9 +19,7 @@ class SafetySystem:
         if self.event_bus is not None:
             from ..events import EmergencyStopTriggered
 
-            self.event_bus.publish(
-                EmergencyStopTriggered(source="SafetySystem", reason=reason)
-            )
+            self.event_bus.publish(EmergencyStopTriggered(source="SafetySystem", reason=reason))
 
     def reset_emergency_stop(self) -> None:
         self.is_emergency_stopped = False
@@ -30,6 +28,4 @@ class SafetySystem:
         if self.event_bus is not None:
             from ..events import SafetyAlert
 
-            self.event_bus.publish(
-                SafetyAlert(source="SafetySystem", level=level, message=message)
-            )
+            self.event_bus.publish(SafetyAlert(source="SafetySystem", level=level, message=message))

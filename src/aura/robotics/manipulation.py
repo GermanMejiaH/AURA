@@ -18,12 +18,10 @@ class Manipulator(ABC):
     """Abstract interface for robotic end-effectors, grippers and manipulators."""
 
     @abstractmethod
-    def grasp_object(self, command: GraspCommand) -> bool:
-        ...
+    def grasp_object(self, command: GraspCommand) -> bool: ...
 
     @abstractmethod
-    def release_object(self, target_object_id: str) -> bool:
-        ...
+    def release_object(self, target_object_id: str) -> bool: ...
 
 
 class MockManipulator(Manipulator):

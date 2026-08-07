@@ -61,9 +61,7 @@ class ModuleManager:
             logger.error(f"Failed to load module {name}: {exc}")
             instance.set_status(ModuleStatus.ERROR, str(exc))
         else:
-            self.event_bus.publish(
-                ModuleLoaded(source="ModuleManager", module_name=name)
-            )
+            self.event_bus.publish(ModuleLoaded(source="ModuleManager", module_name=name))
 
         if auto_init:
             self._initialize_module(name, instance)
@@ -183,15 +181,11 @@ class ModuleManager:
             return True
         allowed = {ModuleStatus.READY, ModuleStatus.PAUSED, ModuleStatus.DEGRADED}
         if module.health.status not in allowed:
-            logger.warning(
-                f"Cannot start module {name}, status is {module.health.status.value}"
-            )
+            logger.warning(f"Cannot start module {name}, status is {module.health.status.value}")
             return False
         try:
             module.start()
-            self.event_bus.publish(
-                ModuleStarted(source="ModuleManager", module_name=name)
-            )
+            self.event_bus.publish(ModuleStarted(source="ModuleManager", module_name=name))
         except Exception as exc:
             logger.error(f"Failed to start module {name}: {exc}")
             module.set_status(ModuleStatus.ERROR, str(exc))
@@ -206,9 +200,7 @@ class ModuleManager:
             return True
         try:
             module.shutdown()
-            self.event_bus.publish(
-                ModuleStopped(source="ModuleManager", module_name=name)
-            )
+            self.event_bus.publish(ModuleStopped(source="ModuleManager", module_name=name))
         except Exception as exc:
             logger.exception(f"Failed to stop module {name}: {exc}")
             module.set_status(ModuleStatus.ERROR, str(exc))

@@ -1,5 +1,6 @@
 print("Archivo cargado")
 
+
 def main() -> None:
     print("AURA booting...")
 

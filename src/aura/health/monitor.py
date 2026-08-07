@@ -52,9 +52,7 @@ class HealthMonitor:
             else 30
         )
         enabled = (
-            self.config.get_typed("health.enabled", bool, True)
-            if self.config is not None
-            else True
+            self.config.get_typed("health.enabled", bool, True) if self.config is not None else True
         )
         if enabled and self.scheduler is not None:
             self._job_id = self.scheduler.schedule_periodic(

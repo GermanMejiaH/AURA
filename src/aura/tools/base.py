@@ -27,5 +27,4 @@ class BaseTool(ABC):
     metadata: ToolMetadata
 
     @abstractmethod
-    def execute(self, **kwargs: Any) -> ToolResult:
-        ...
+    def execute(self, **kwargs: Any) -> ToolResult: ...

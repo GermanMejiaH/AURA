@@ -70,19 +70,13 @@ class Entity:
             pass
 
         created_at = (
-            datetime.fromisoformat(data["created_at"])
-            if data.get("created_at")
-            else _utcnow()
+            datetime.fromisoformat(data["created_at"]) if data.get("created_at") else _utcnow()
         )
         updated_at = (
-            datetime.fromisoformat(data["updated_at"])
-            if data.get("updated_at")
-            else _utcnow()
+            datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else _utcnow()
         )
         valid_until = (
-            datetime.fromisoformat(data["valid_until"])
-            if data.get("valid_until")
-            else None
+            datetime.fromisoformat(data["valid_until"]) if data.get("valid_until") else None
         )
 
         return cls(
@@ -112,9 +106,7 @@ class Relation:
 
     def to_dict(self) -> dict[str, Any]:
         rel_type = (
-            self.relation_type.value
-            if isinstance(self.relation_type, Enum)
-            else self.relation_type
+            self.relation_type.value if isinstance(self.relation_type, Enum) else self.relation_type
         )
         return {
             "id": self.id,
@@ -130,23 +122,17 @@ class Relation:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Relation:
-        rel_val: RelationType | str = data.get(
-            "relation_type", RelationType.CONNECTED_TO
-        )
+        rel_val: RelationType | str = data.get("relation_type", RelationType.CONNECTED_TO)
         try:
             rel_val = RelationType(rel_val)
         except ValueError:
             pass
 
         created_at = (
-            datetime.fromisoformat(data["created_at"])
-            if data.get("created_at")
-            else _utcnow()
+            datetime.fromisoformat(data["created_at"]) if data.get("created_at") else _utcnow()
         )
         updated_at = (
-            datetime.fromisoformat(data["updated_at"])
-            if data.get("updated_at")
-            else _utcnow()
+            datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else _utcnow()
         )
 
         return cls(

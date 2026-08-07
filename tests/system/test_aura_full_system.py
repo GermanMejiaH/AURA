@@ -57,9 +57,7 @@ def test_aura_full_multimodal_system_pipeline(tmp_path):
     # 4. Robotics Dispatch (Navigation & Manipulation)
     aura.publish(ActionDispatched(action_type="navigate", payload={"x": 2.5, "y": 3.5}))
     aura.publish(
-        ActionDispatched(
-            action_type="grasp", payload={"target_object_id": "document_folder"}
-        )
+        ActionDispatched(action_type="grasp", payload={"target_object_id": "document_folder"})
     )
 
     # 5. Autonomy Goal Dispatch

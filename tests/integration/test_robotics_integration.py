@@ -35,17 +35,11 @@ def test_robotics_module_integration(tmp_path):
 
     # Publish motor action
     aura.publish(
-        ActionDispatched(
-            action_type="move_joint", payload={"joint_id": "elbow", "position": 0.78}
-        )
+        ActionDispatched(action_type="move_joint", payload={"joint_id": "elbow", "position": 0.78})
     )
 
     # Publish navigation action
-    aura.publish(
-        ActionDispatched(
-            action_type="navigate", payload={"x": 5.0, "y": 12.0}
-        )
-    )
+    aura.publish(ActionDispatched(action_type="navigate", payload={"x": 5.0, "y": 12.0}))
 
     assert len(motor_events) == 1
     assert motor_events[0].joint_id == "elbow"

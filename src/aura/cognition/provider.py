@@ -22,8 +22,7 @@ class LLMProvider(ABC):
         prompt: str,
         system_instruction: str = "",
         context: dict[str, Any] | None = None,
-    ) -> LLMResponse:
-        ...
+    ) -> LLMResponse: ...
 
     @abstractmethod
     def structured_reason(
@@ -31,8 +30,7 @@ class LLMProvider(ABC):
         prompt: str,
         schema: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 class MockLLMProvider(LLMProvider):

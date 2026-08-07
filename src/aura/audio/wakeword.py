@@ -19,16 +19,13 @@ class WakeWordDetector(ABC):
     """Abstract interface for Wake Word Detection (e.g. Porcupine, PocketSpinning, Vosk)."""
 
     @abstractmethod
-    def start(self) -> None:
-        ...
+    def start(self) -> None: ...
 
     @abstractmethod
-    def stop(self) -> None:
-        ...
+    def stop(self) -> None: ...
 
     @abstractmethod
-    def is_active(self) -> bool:
-        ...
+    def is_active(self) -> bool: ...
 
 
 class MockWakeWordDetector(WakeWordDetector):

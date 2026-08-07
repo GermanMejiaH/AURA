@@ -19,8 +19,7 @@ class TTSProvider(ABC):
     """Abstract interface for Text-to-Speech providers (Piper, Coqui, ElevenLabs)."""
 
     @abstractmethod
-    def synthesize(self, text: str, voice: str = "default") -> TTSResult:
-        ...
+    def synthesize(self, text: str, voice: str = "default") -> TTSResult: ...
 
 
 class MockTTSProvider(TTSProvider):

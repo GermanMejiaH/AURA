@@ -15,6 +15,7 @@ def run_interactive_cli() -> int:
     from aura.core import AURA, AURABootOptions
     from aura.events import ActionDispatched, GoalSet, ObjectDetected, SpeechRecognized
     from aura.tools import ToolRegistry
+
     print("=" * 60)
     print("      AURA — Autonomous Universal Responsive Agent CLI")
     print("=" * 60)
@@ -28,15 +29,14 @@ def run_interactive_cli() -> int:
 
     modules = aura.module_manager.list_modules() if aura.module_manager is not None else []
     print(f"\n[AURA READY] Estado: {aura.state.name} | Tiempo de arranque: {boot_time:.2f}ms")
-    print(f"Módulos Activos ({len(modules)}): "
-          f"{', '.join([name for name, _ in modules])}")
+    print(f"Módulos Activos ({len(modules)}): " f"{', '.join([name for name, _ in modules])}")
     print("\nEscribe 'help' para ver los comandos disponibles o 'exit' para salir.\n")
 
     try:
         while True:
             try:
                 user_input = input("AURA> ").strip()
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt, EOFError:
                 print("\nInterrupción detectada. Cerrando AURA...")
                 break
 

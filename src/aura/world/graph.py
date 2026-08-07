@@ -115,9 +115,7 @@ class CognitiveWorldModel:
         with self._lock:
             return self._relations.get(relation_id)
 
-    def get_relations_for_entity(
-        self, entity_id: str, direction: str = "all"
-    ) -> list[Relation]:
+    def get_relations_for_entity(self, entity_id: str, direction: str = "all") -> list[Relation]:
         with self._lock:
             rel_ids: set[str] = set()
             if direction in ("out", "outgoing", "all"):

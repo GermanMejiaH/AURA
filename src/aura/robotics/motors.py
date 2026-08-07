@@ -20,16 +20,13 @@ class MotorController(ABC):
     """Abstract interface for motor controllers and physical actuators (ROS2, CAN, Serial)."""
 
     @abstractmethod
-    def move_joint(self, command: MotorCommand) -> bool:
-        ...
+    def move_joint(self, command: MotorCommand) -> bool: ...
 
     @abstractmethod
-    def set_wheel_velocity(self, linear_v: float, angular_v: float) -> bool:
-        ...
+    def set_wheel_velocity(self, linear_v: float, angular_v: float) -> bool: ...
 
     @abstractmethod
-    def stop_all(self) -> None:
-        ...
+    def stop_all(self) -> None: ...
 
 
 class MockMotorController(MotorController):

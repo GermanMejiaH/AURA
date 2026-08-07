@@ -19,8 +19,7 @@ class STTProvider(ABC):
     """Abstract interface for Speech-to-Text providers (Whisper, Vosk, Google STT)."""
 
     @abstractmethod
-    def transcribe(self, audio_bytes: bytes, language: str = "es") -> STTResult:
-        ...
+    def transcribe(self, audio_bytes: bytes, language: str = "es") -> STTResult: ...
 
 
 class MockSTTProvider(STTProvider):

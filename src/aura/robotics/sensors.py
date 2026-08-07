@@ -19,12 +19,10 @@ class SensorManager(ABC):
     """Abstract interface for telemetry and physical sensors (IMU, LiDAR, Battery)."""
 
     @abstractmethod
-    def read_sensor(self, sensor_type: str) -> SensorData:
-        ...
+    def read_sensor(self, sensor_type: str) -> SensorData: ...
 
     @abstractmethod
-    def read_all_sensors(self) -> list[SensorData]:
-        ...
+    def read_all_sensors(self) -> list[SensorData]: ...
 
 
 class MockSensorManager(SensorManager):

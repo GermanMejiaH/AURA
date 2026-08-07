@@ -41,9 +41,7 @@ class Scheduler:
         if self._running:
             return
         self._max_workers = (
-            self.config.get_typed("scheduler.max_workers", int, 4)
-            if self.config is not None
-            else 4
+            self.config.get_typed("scheduler.max_workers", int, 4) if self.config is not None else 4
         )
         self._stop_event.clear()
         self._running = True
@@ -108,9 +106,7 @@ class Scheduler:
         with self._lock:
             self._jobs.append(job)
         logger = get_logger("Scheduler")
-        logger.debug(
-            f"Scheduled periodic job '{name}' every {td.total_seconds():.1f}s"
-        )
+        logger.debug(f"Scheduled periodic job '{name}' every {td.total_seconds():.1f}s")
         return job.id
 
     def cancel(self, job_id: UUID) -> bool:

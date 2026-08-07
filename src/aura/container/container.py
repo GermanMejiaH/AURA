@@ -141,7 +141,7 @@ class DependencyContainer:
 
         try:
             sig = inspect.signature(cls.__init__)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return cls()
 
         kwargs: dict[str, Any] = {}

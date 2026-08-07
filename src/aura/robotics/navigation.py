@@ -20,12 +20,10 @@ class NavigationSystem(ABC):
     """Abstract interface for robotic trajectory planning and navigation."""
 
     @abstractmethod
-    def navigate_to(self, waypoint: Waypoint) -> bool:
-        ...
+    def navigate_to(self, waypoint: Waypoint) -> bool: ...
 
     @abstractmethod
-    def cancel_navigation(self) -> None:
-        ...
+    def cancel_navigation(self) -> None: ...
 
 
 class MockNavigationSystem(NavigationSystem):
