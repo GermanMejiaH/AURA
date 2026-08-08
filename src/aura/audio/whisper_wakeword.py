@@ -58,7 +58,7 @@ class WhisperWakeWordDetector(WakeWordDetector):
 
     def _listen_loop(self) -> None:
         """Background thread: record short chunks and check for wake keywords."""
-        from faster_whisper import WhisperModel
+        from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
         from .microphone import MicrophoneRecorder
 

@@ -63,7 +63,7 @@ class EdgeTTSProvider(TTSProvider):
 
     async def _synth_async(self, text: str, voice_name: str) -> bytes:
         """Async helper to generate MP3 audio from Edge TTS."""
-        import edge_tts  # type: ignore
+        import edge_tts
 
         buf = io.BytesIO()
         communicate = edge_tts.Communicate(text, voice_name, rate=self.rate, pitch=self.pitch)

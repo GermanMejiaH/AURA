@@ -398,8 +398,10 @@ def _handle_wake(aura: AURA) -> None:
 
 def _handle_converse(aura: AURA, arg: str) -> None:
     """Full conversational loop: microphone → STT → LLM → TTS speak. Press Ctrl+C to exit."""
+    import os
+
     from aura.audio import EdgeTTSProvider, FasterWhisperSTTProvider, MicrophoneRecorder
-    from aura.cognition import MockLLMProvider
+    from aura.cognition import GeminiLLMProvider, LLMProvider
 
     # --- Parse optional rounds argument ---
     max_rounds = 0  # 0 = infinite
@@ -413,12 +415,30 @@ def _handle_converse(aura: AURA, arg: str) -> None:
         model_size_or_path="base", device="cpu", event_bus=aura.event_bus
     )
     tts = EdgeTTSProvider(voice="es-aura", event_bus=aura.event_bus)
-    llm = MockLLMProvider(
-        default_response=(
-            "Entendido. He procesado tu solicitud y estoy analizando la situación. "
-            "¿En qué más puedo ayudarte?"
-        )
-    )
+
+    aura.config.load_from_env()
+
+    from aura.cognition import OpenAILLMProvider
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    has_valid_gemini = bool(gemini_key and not gemini_key.startswith("AQ."))
+
+    llm: LLMProvider
+    if os.environ.get("GROQ_API_KEY"):
+        llm = OpenAILLMProvider()
+        print("  🧠 Motor LLM: Groq Cloud (Llama 3.3 70B Real) Activo")
+    elif os.environ.get("OPENROUTER_API_KEY"):
+        llm = OpenAILLMProvider()
+        print("  🧠 Motor LLM: OpenRouter Real Activo")
+    elif os.environ.get("OPENAI_API_KEY"):
+        llm = OpenAILLMProvider()
+        print("  🧠 Motor LLM: OpenAI Real Activo")
+    elif has_valid_gemini:
+        llm = GeminiLLMProvider()
+        print("  🧠 Motor LLM: Gemini Real Activo")
+    else:
+        llm = OpenAILLMProvider()
+        print("  🧠 Motor LLM: Conectando motor LLM de AURA...")
     recorder = MicrophoneRecorder()
 
     print("\n" + "═" * 60)

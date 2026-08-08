@@ -3,9 +3,7 @@ from __future__ import annotations
 import time
 
 from aura.config import ConfigurationManager
-from aura.container import DependencyContainer
-from aura.core import Scheduler, LifecycleManager
-from aura.core.scheduler import ScheduledJob
+from aura.core import Scheduler
 
 
 def test_scheduler_one_shot_triggered():

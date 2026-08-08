@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, TypeVar, Generic
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -65,6 +66,16 @@ class ConfigurationManager:
         self.load_from_dict(data, source=str(p))
 
     def load_from_env(self, prefix: str = "AURA_") -> None:
+        env_file = Path(".env")
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip("'\"")
+                    if k and v:
+                        os.environ[k] = v
+
         result: dict[str, Any] = {}
         for full_key, value in os.environ.items():
             if not full_key.startswith(prefix):

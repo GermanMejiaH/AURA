@@ -1,17 +1,17 @@
 from .logger import (
     AuraLogger,
+    EventBusHandler,
+    attach_event_bus,
     configure_logging,
     get_logger,
-    attach_event_bus,
     set_logger_instance,
-    EventBusHandler,
 )
 
 __all__ = [
     "AuraLogger",
+    "EventBusHandler",
+    "attach_event_bus",
     "configure_logging",
     "get_logger",
-    "attach_event_bus",
     "set_logger_instance",
-    "EventBusHandler",
 ]

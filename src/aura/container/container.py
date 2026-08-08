@@ -146,9 +146,26 @@ class DependencyContainer:
                 if param.default is not inspect.Parameter.empty:
                     kwargs[name] = param.default
                 continue
-            if annotation in self._services or annotation in self._instances:
+
+            matched: Any = None
+            is_reg = isinstance(annotation, type) and (
+                annotation in self._services or annotation in self._instances
+            )
+            if is_reg:
+                matched = annotation
+            else:
+                for target_cls in self._services:
+                    name_match = (
+                        target_cls.__name__ == str(annotation)
+                        or target_cls.__name__ in str(annotation)
+                    )
+                    if name_match:
+                        matched = target_cls
+                        break
+
+            if matched is not None:
                 try:
-                    kwargs[name] = self.resolve(annotation)
+                    kwargs[name] = self.resolve(matched)
                 except Exception:
                     if param.default is not inspect.Parameter.empty:
                         kwargs[name] = param.default

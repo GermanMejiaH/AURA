@@ -49,6 +49,14 @@ class AURABootOptions:
     log_file_path: str = "aura.log"
     enable_scheduler: bool = True
     enable_health_monitor: bool = True
+    enable_cwm: bool = True
+    enable_cognition: bool = True
+    enable_audio: bool = True
+    enable_vision: bool = True
+    enable_memory: bool = True
+    enable_tools: bool = True
+    enable_robotics: bool = True
+    enable_autonomy: bool = True
     auto_discover_modules: bool = False
     module_classes: Sequence[type[BaseModule]] = ()
     graceful_shutdown_timeout: float = 15.0
@@ -285,6 +293,36 @@ class AURA:
         assert mm is not None
         if self.options.module_classes:
             mm.register_many(list(self.options.module_classes))
+        elif not self.options.auto_discover_modules:
+            from ..audio.module import AudioModule
+            from ..autonomy.module import AutonomyModule
+            from ..cognition.module import CognitionModule
+            from ..memory.module import MemoryModule
+            from ..robotics.module import RoboticsModule
+            from ..tools.module import ToolsModule
+            from ..vision.module import VisionModule
+            from ..world.module import CWMModule
+
+            default_modules: list[type[BaseModule]] = []
+            if self.options.enable_cwm:
+                default_modules.append(CWMModule)
+            if self.options.enable_cognition:
+                default_modules.append(CognitionModule)
+            if self.options.enable_audio:
+                default_modules.append(AudioModule)
+            if self.options.enable_vision:
+                default_modules.append(VisionModule)
+            if self.options.enable_memory:
+                default_modules.append(MemoryModule)
+            if self.options.enable_tools:
+                default_modules.append(ToolsModule)
+            if self.options.enable_robotics:
+                default_modules.append(RoboticsModule)
+            if self.options.enable_autonomy:
+                default_modules.append(AutonomyModule)
+
+            mm.register_many(default_modules)
+
         if self.options.auto_discover_modules or self.config.get_typed(
             "modules.auto_discover", bool, False
         ):

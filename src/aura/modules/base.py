@@ -143,6 +143,14 @@ class BaseModule(ABC):
     def on_shutdown(self) -> None:
         pass
 
+    def publish(self, event: object) -> None:
+        if self._event_bus is not None:
+            self._event_bus.publish(event)  # type: ignore[arg-type]
+
+    def subscribe(self, event_type: type[object] | str, handler: object) -> None:
+        if self._event_bus is not None:
+            self._event_bus.subscribe(event_type, handler)  # type: ignore[arg-type]
+
     def on_health_check(self) -> dict[str, object] | None:
         return None
 
