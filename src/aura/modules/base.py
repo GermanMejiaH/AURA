@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..config import ConfigurationManager
@@ -121,24 +121,12 @@ class BaseModule(ABC):
             self._health.last_error = str(exc)
         return self.health
 
-    def publish(self, event: Any) -> None:
-        if self._event_bus is not None:
-            self._event_bus.publish(event)
-
-    def subscribe(
-        self,
-        event_type: str | type[Any],
-        handler: Any,
-        filter_fn: Any = None,
-    ) -> None:
-        if self._event_bus is not None:
-            self._event_bus.subscribe(event_type, handler, filter_fn)
-
     def on_load(self) -> None:
         pass
 
     @abstractmethod
-    def on_initialize(self) -> None: ...
+    def on_initialize(self) -> None:
+        ...
 
     def on_start(self) -> None:
         pass

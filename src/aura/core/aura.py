@@ -49,14 +49,6 @@ class AURABootOptions:
     log_file_path: str = "aura.log"
     enable_scheduler: bool = True
     enable_health_monitor: bool = True
-    enable_cwm: bool = True
-    enable_cognition: bool = True
-    enable_audio: bool = True
-    enable_vision: bool = True
-    enable_memory: bool = True
-    enable_tools: bool = True
-    enable_robotics: bool = True
-    enable_autonomy: bool = True
     auto_discover_modules: bool = False
     module_classes: Sequence[type[BaseModule]] = ()
     graceful_shutdown_timeout: float = 15.0
@@ -127,7 +119,9 @@ class AURA:
         logger = get_logger("AURA")
         logger.info(f"Shutdown requested: {reason}")
         try:
-            self.event_bus.publish(SystemShutdownRequested(source="AURA", reason=reason))
+            self.event_bus.publish(
+                SystemShutdownRequested(source="AURA", reason=reason)
+            )
         except Exception:
             pass
         self._shutdown_event.set()
@@ -166,7 +160,9 @@ class AURA:
                     logger.exception("Failed to stop modules")
 
             try:
-                self.event_bus.publish(SystemStopped(source="AURA", exit_code=0))
+                self.event_bus.publish(
+                    SystemStopped(source="AURA", exit_code=0)
+                )
             except Exception:
                 pass
 
@@ -247,7 +243,9 @@ class AURA:
         self.container.register(ModuleManager, instance=self.module_manager)
         self.diagnostics.module_manager = self.module_manager
 
-        if self.options.enable_scheduler or self.config.get_typed("scheduler.enabled", bool, True):
+        if self.options.enable_scheduler or self.config.get_typed(
+            "scheduler.enabled", bool, True
+        ):
             self.scheduler = Scheduler(config=self.config)
             self.container.register(Scheduler, instance=self.scheduler)
             try:
@@ -285,46 +283,6 @@ class AURA:
     def _step6_discover_and_load_modules(self) -> None:
         mm = self.module_manager
         assert mm is not None
-        if self.options.enable_cwm:
-            from ..world import CWMModule
-
-            if mm.get("cwm") is None:
-                mm.register(CWMModule)
-        if self.options.enable_cognition:
-            from ..cognition import CognitionModule
-
-            if mm.get("cognition") is None:
-                mm.register(CognitionModule)
-        if self.options.enable_audio:
-            from ..audio import AudioModule
-
-            if mm.get("audio") is None:
-                mm.register(AudioModule)
-        if self.options.enable_vision:
-            from ..vision import VisionModule
-
-            if mm.get("vision") is None:
-                mm.register(VisionModule)
-        if self.options.enable_memory:
-            from ..memory import MemoryModule
-
-            if mm.get("memory") is None:
-                mm.register(MemoryModule)
-        if self.options.enable_tools:
-            from ..tools import ToolsModule
-
-            if mm.get("tools") is None:
-                mm.register(ToolsModule)
-        if self.options.enable_robotics:
-            from ..robotics import RoboticsModule
-
-            if mm.get("robotics") is None:
-                mm.register(RoboticsModule)
-        if self.options.enable_autonomy:
-            from ..autonomy import AutonomyModule
-
-            if mm.get("autonomy") is None:
-                mm.register(AutonomyModule)
         if self.options.module_classes:
             mm.register_many(list(self.options.module_classes))
         if self.options.auto_discover_modules or self.config.get_typed(
@@ -434,12 +392,11 @@ class AURA:
         if threading.current_thread() is not threading.main_thread():
             return
         try:
-
             def _handler(signum: int, frame: Any) -> None:
                 self.request_shutdown(reason=f"signal_{signum}")
 
             signal.signal(signal.SIGINT, _handler)
             signal.signal(signal.SIGTERM, _handler)
             self._signal_handlers_installed = True
-        except ValueError, OSError, AttributeError:
+        except (ValueError, OSError, AttributeError):
             pass

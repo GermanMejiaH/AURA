@@ -107,6 +107,12 @@ def run_interactive_cli() -> int:
                 _handle_events(recent_events)
             elif cmd == "say":
                 _handle_say(aura, arg)
+            elif cmd in ("listen", "escuchar", "mic"):
+                _handle_listen(aura, arg)
+            elif cmd in ("converse", "conversar", "hablar", "chat"):
+                _handle_converse(aura, arg)
+            elif cmd in ("wake", "despertar", "espera"):
+                _handle_wake(aura)
             elif cmd == "see":
                 _handle_see(aura, arg)
             elif cmd == "goal":
@@ -132,6 +138,9 @@ def _print_help() -> None:
     print("  • tools [list|exec]      - Lista y ejecuta las herramientas digitales integradas")
     print("  • events                 - Muestra el historial en tiempo real de eventos")
     print("  • say <mensaje>          - Envía una entrada conversacional de voz a AURA")
+    print("  • listen [duración]      - Captura voz real desde tu micrófono y la transcribe")
+    print("  • converse               - 🔴 MODO CONVERSACIÓN: escucha → razona → habla en bucle")
+    print("  • wake                   - 👂 MODO ESPERA: escucha el nombre 'AURA' y se activa solo")
     print("  • see <objeto>           - Envía una percepción visual de objeto")
     print("  • goal <meta>            - Define y prioriza un objetivo autónomo")
     print("  • nav <x> <y>            - Desplaza el sistema robótico a una coordenada")
@@ -311,6 +320,155 @@ def _handle_say(aura: AURA, text: str) -> None:
     print(f"Usuario: {text}")
     aura.publish(SpeechRecognized(text=text))
     print(f"AURA: Entendido. Procesando la instrucción '{text}'...")
+
+
+def _handle_listen(aura: AURA, arg: str) -> None:
+    from aura.audio import FasterWhisperSTTProvider, MicrophoneRecorder
+
+    duration = 4.0
+    if arg:
+        try:
+            duration = float(arg)
+        except ValueError:
+            pass
+
+    print(f"\n🎙️ ¡Grabando micrófono en vivo durante {duration:.1f} segundos...")
+    print("   Habla claramente por tu micrófono...")
+
+    recorder = MicrophoneRecorder()
+    audio_bytes = recorder.record_bytes(duration_sec=duration)
+
+    print("   Audio capturado. Procesando transcripción con Faster Whisper...")
+    stt = FasterWhisperSTTProvider(
+        model_size_or_path="tiny", device="cpu", event_bus=aura.event_bus
+    )
+    result = stt.transcribe(audio_bytes, language="es")
+
+    if result.text:
+        print(f"\n   ✓ Vocabulario reconocido: '{result.text}'")
+        print(f"     Confianza Log-Prob: {result.confidence:.2f}")
+    else:
+        print("\n   ⚠ No se detectó ninguna voz en la grabación.")
+
+
+
+def _handle_wake(aura: AURA) -> None:
+    """Passive wake-word listening mode: AURA monitors silently and activates on its name."""
+    from aura.audio import WhisperWakeWordDetector
+
+    print("\n" + "═" * 60)
+    print("  👂 MODO ESPERA ACTIVO — AURA ESTÁ ESCUCHANDO...")
+    print("  Di 'AURA' para activar la conversación.")
+    print("  Presiona Ctrl+C para salir del modo espera.")
+    print("═" * 60 + "\n")
+
+    import threading
+
+    conversation_triggered = threading.Event()
+
+    def on_wake_detected(result: object) -> None:
+        from aura.audio.wakeword import WakeWordResult as _WakeWordResult
+
+        r: _WakeWordResult = result  # type: ignore[assignment]
+        print(f"\n  ✅ ¡Wake Word detectada! → '{r.keyword}' (confianza: {r.confidence:.0%})")
+        print("  🔴 Activando AURA...\n")
+        conversation_triggered.set()
+
+    detector = WhisperWakeWordDetector(
+        keywords=["aura", "hora", "ahora", "laura"],
+        model_size="tiny",
+        chunk_duration_sec=1.5,
+        on_detected=on_wake_detected,
+        event_bus=aura.event_bus,
+    )
+
+    detector.start()
+    print("  [Sistema en espera silenciosa. Habla cuando estés listo...]\n")
+
+    try:
+        conversation_triggered.wait()  # Block until wake word heard
+    except KeyboardInterrupt:
+        print("\n  Saliendo del modo espera...")
+    finally:
+        detector.stop()
+
+    if conversation_triggered.is_set():
+        _handle_converse(aura, "")
+
+
+def _handle_converse(aura: AURA, arg: str) -> None:
+    """Full conversational loop: microphone → STT → LLM → TTS speak. Press Ctrl+C to exit."""
+    from aura.audio import EdgeTTSProvider, FasterWhisperSTTProvider, MicrophoneRecorder
+    from aura.cognition import MockLLMProvider
+
+    # --- Parse optional rounds argument ---
+    max_rounds = 0  # 0 = infinite
+    if arg:
+        try:
+            max_rounds = int(arg)
+        except ValueError:
+            pass
+
+    stt = FasterWhisperSTTProvider(
+        model_size_or_path="base", device="cpu", event_bus=aura.event_bus
+    )
+    tts = EdgeTTSProvider(voice="es-aura", event_bus=aura.event_bus)
+    llm = MockLLMProvider(
+        default_response=(
+            "Entendido. He procesado tu solicitud y estoy analizando la situación. "
+            "¿En qué más puedo ayudarte?"
+        )
+    )
+    recorder = MicrophoneRecorder()
+
+    print("\n" + "═" * 60)
+    print("  🔴 MODO CONVERSACIÓN ACTIVO — AURA TE ESTÁ ESCUCHANDO")
+    print("  Habla por tu micrófono. Escribe 'salir' o Ctrl+C para terminar.")
+    print("═" * 60 + "\n")
+
+    # AURA greets the user vocally
+    greeting = "Hola, soy AURA. Di algo y te responderé."
+    print(f"[AURA]: {greeting}")
+    tts.speak(greeting)
+
+    rounds = 0
+    try:
+        while max_rounds == 0 or rounds < max_rounds:
+            print("\n  🎙️  Escuchando... (4 segundos)")
+            audio_bytes = recorder.record_bytes(duration_sec=4.0)
+
+            stt_result = stt.transcribe(audio_bytes, language="es")
+            user_text = stt_result.text.strip()
+
+            if not user_text:
+                print("  ⚠  No escuché nada. Intenta de nuevo.")
+                continue
+
+            print(f"\n[Tú]:   {user_text}")
+
+            if any(w in user_text.lower() for w in ("salir", "adiós", "adios", "hasta luego")):
+                farewell = "Hasta luego. Fue un placer conversar contigo."
+                print(f"[AURA]: {farewell}")
+                tts.speak(farewell)
+                break
+
+            # LLM reasoning
+            llm_response = llm.generate_response(
+                prompt=user_text,
+                system_instruction=(
+                    "Eres AURA, un asistente cognitivo inteligente y autónomo. "
+                    "Responde siempre en español de forma concisa, clara y amigable."
+                ),
+            )
+            aura_text = llm_response.content
+            print(f"[AURA]: {aura_text}")
+            tts.speak(aura_text)
+            rounds += 1
+
+    except KeyboardInterrupt:
+        farewell = "Conversación interrumpida. Hasta pronto."
+        print(f"\n[AURA]: {farewell}")
+        tts.speak(farewell)
 
 
 def _handle_see(aura: AURA, label: str) -> None:

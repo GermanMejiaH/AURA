@@ -5,9 +5,10 @@ import sys
 from dataclasses import dataclass, field
 from logging import Formatter, Handler, LogRecord
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..events import EventBus, LogEntryCreated
+
 
 _LOG_LEVELS: dict[str, int] = {
     "DEBUG": logging.DEBUG,

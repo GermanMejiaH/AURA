@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Type
 
 from .models import Event
+
 
 EventHandler = Callable[[Event], None]
 EventFilter = Callable[[Event], bool]
@@ -22,7 +23,7 @@ class EventBus:
 
     def subscribe(
         self,
-        event_type: str | type[Event],
+        event_type: str | Type[Event],
         handler: EventHandler,
         filter_fn: EventFilter | None = None,
     ) -> None:
@@ -31,7 +32,7 @@ class EventBus:
 
     def unsubscribe(
         self,
-        event_type: str | type[Event],
+        event_type: str | Type[Event],
         handler: EventHandler,
     ) -> None:
         name = event_type if isinstance(event_type, str) else event_type.event_name()
@@ -94,13 +95,13 @@ class EventBus:
     def clear_history(self) -> None:
         self._history.clear()
 
-    def has_subscribers(self, event_type: str | type[Event] | None = None) -> bool:
+    def has_subscribers(self, event_type: str | Type[Event] | None = None) -> bool:
         if event_type is None:
             return any(len(s) > 0 for s in self._subscribers.values())
         name = event_type if isinstance(event_type, str) else event_type.event_name()
         return len(self._subscribers.get(name, [])) > 0
 
-    def subscriber_count(self, event_type: str | type[Event] | None = None) -> int:
+    def subscriber_count(self, event_type: str | Type[Event] | None = None) -> int:
         if event_type is None:
             return sum(len(s) for s in self._subscribers.values())
         name = event_type if isinstance(event_type, str) else event_type.event_name()

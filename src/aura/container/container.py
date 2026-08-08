@@ -135,31 +135,18 @@ class DependencyContainer:
         import inspect
 
         try:
-            hints = typing.get_type_hints(cls.__init__)
-        except Exception:
-            hints = {}
-
-        try:
             sig = inspect.signature(cls.__init__)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return cls()
 
         kwargs: dict[str, Any] = {}
         for name, param in list(sig.parameters.items())[1:]:
-            annotation = hints.get(name, param.annotation)
+            annotation = param.annotation
             if annotation is inspect.Parameter.empty:
                 if param.default is not inspect.Parameter.empty:
                     kwargs[name] = param.default
                 continue
-            if isinstance(annotation, type) and self.has(annotation):
-                try:
-                    kwargs[name] = self.resolve(annotation)
-                except Exception:
-                    if param.default is not inspect.Parameter.empty:
-                        kwargs[name] = param.default
-                    else:
-                        raise
-            elif annotation in self._services or annotation in self._instances:
+            if annotation in self._services or annotation in self._instances:
                 try:
                     kwargs[name] = self.resolve(annotation)
                 except Exception:

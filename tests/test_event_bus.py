@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from aura.events import (
-    ErrorOccurred,
     Event,
     EventBus,
-    SystemBooting,
     SystemReady,
+    SystemBooting,
+    ErrorOccurred,
+    LifecycleStateChanged,
 )
 
 

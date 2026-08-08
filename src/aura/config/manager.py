@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Iterator, TypeVar, Generic
 
 T = TypeVar("T")
 
@@ -118,7 +117,7 @@ class ConfigurationManager:
             return value
         try:
             return expected_type(value)  # type: ignore[call-arg]
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return default
 
     def set(self, key: str, value: Any, source: str = "runtime") -> None:

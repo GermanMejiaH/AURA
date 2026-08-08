@@ -6,6 +6,7 @@ from .decision import Decision, DecisionEngine, Intent
 from .module import CognitionModule
 from .planner import Plan, Planner, PlanStep
 from .provider import LLMProvider, LLMResponse, MockLLMProvider
+from .real_llm_provider import RealLLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
 from .states import CognitiveState, CognitiveStateMachine
 from .working_memory import WorkingMemory, WorkingMemoryItem
@@ -28,6 +29,7 @@ __all__ = [
     "Plan",
     "PlanStep",
     "Planner",
+    "RealLLMProvider",
     "ReasoningEngine",
     "ReasoningResult",
     "WorkingMemory",

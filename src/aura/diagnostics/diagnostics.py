@@ -96,7 +96,9 @@ class Diagnostics:
                     self._boot_started_at.isoformat() if self._boot_started_at else None
                 ),
                 "completed_at": (
-                    self._boot_completed_at.isoformat() if self._boot_completed_at else None
+                    self._boot_completed_at.isoformat()
+                    if self._boot_completed_at
+                    else None
                 ),
                 "duration_seconds": self.boot_duration_seconds,
             },

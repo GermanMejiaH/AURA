@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from aura import AURA, AURABootOptions, BaseModule, ModuleStatus, SystemState
 
 
