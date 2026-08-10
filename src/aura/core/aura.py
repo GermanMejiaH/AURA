@@ -86,6 +86,10 @@ class AURA:
         self.diagnostics.event_bus = self.event_bus
         self.diagnostics.lifecycle = self.lifecycle
 
+    @property
+    def is_booted(self) -> bool:
+        return self._booted
+
     # ---------------------------------------------------------
     # Boot / Shutdown
     # ---------------------------------------------------------
@@ -98,18 +102,48 @@ class AURA:
 
             self.diagnostics.mark_boot_started()
 
-            self._step1_bootstrap_logging()
-            self._step2_load_configuration()
-            self._step3_register_core_services()
-            self._step4_build_support_components()
-            self._step5_lifecycle_boot()
-            self._step6_discover_and_load_modules()
-            self._step7_initialize_and_start()
-            self._step8_become_ready()
+            try:
+                self._step1_bootstrap_logging()
+                self._step2_load_configuration()
+                self._step3_register_core_services()
+                self._step4_build_support_components()
+                self._step5_lifecycle_boot()
+                self._step6_discover_and_load_modules()
+                self._step7_initialize_and_start()
+                self._step8_become_ready()
+            except Exception as exc:
+                logger = get_logger("AURA")
+                logger.error(f"Boot sequence failed: {exc}")
+                self._rollback_boot()
+                raise
 
             self._booted = True
             self._install_signal_handlers()
             return self
+
+    def _rollback_boot(self) -> None:
+        logger = get_logger("AURA")
+        logger.info("Rolling back partial boot state...")
+        if self.health_monitor is not None:
+            try:
+                self.health_monitor.stop()
+            except Exception:
+                pass
+        if self.scheduler is not None:
+            try:
+                self.scheduler.stop()
+            except Exception:
+                pass
+        if self.module_manager is not None:
+            try:
+                self.module_manager.stop_all()
+            except Exception:
+                pass
+        try:
+            self.lifecycle.stop(reason="boot_failed")
+        except Exception:
+            pass
+        self._booted = False
 
     def run_until_shutdown(self, poll_interval: float = 0.5) -> None:
         if not self._booted:
@@ -157,7 +191,7 @@ class AURA:
 
             if self.scheduler is not None:
                 try:
-                    self.scheduler.stop(timeout=grace)
+                    self.scheduler.stop(timeout=grace if wait else 0.5)
                 except Exception:
                     logger.exception("Failed to stop Scheduler")
 
@@ -343,6 +377,10 @@ class AURA:
             logger = get_logger("AURA")
             logger.warning(f"Modules failed to initialize: {', '.join(failed_init)}")
             self.lifecycle.degrade(f"init_failed:{','.join(failed_init)}")
+            for name in failed_init:
+                mod = mm.get(name)
+                if mod and mod.required:
+                    raise RuntimeError(f"Required module failed to initialize: {name}")
 
         start_results = mm.start_all()
         failed_start = [name for name, ok in start_results.items() if not ok]
@@ -350,6 +388,10 @@ class AURA:
             logger = get_logger("AURA")
             logger.warning(f"Modules failed to start: {', '.join(failed_start)}")
             self.lifecycle.degrade(f"start_failed:{','.join(failed_start)}")
+            for name in failed_start:
+                mod = mm.get(name)
+                if mod and mod.required:
+                    raise RuntimeError(f"Required module failed to start: {name}")
 
         logger = get_logger("AURA")
         logger.debug("Step 7/8: Modules initialized and started")

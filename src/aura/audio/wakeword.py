@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..events import EventBus
+    pass
 
 
 @dataclass
@@ -31,8 +31,7 @@ class WakeWordDetector(ABC):
 class MockWakeWordDetector(WakeWordDetector):
     """Mock Wake Word Detector for development and testing."""
 
-    def __init__(self, event_bus: EventBus | None = None) -> None:
-        self.event_bus = event_bus
+    def __init__(self) -> None:
         self._running = False
 
     def start(self) -> None:
@@ -45,14 +44,4 @@ class MockWakeWordDetector(WakeWordDetector):
         return self._running
 
     def trigger(self, keyword: str = "aura", confidence: float = 0.98) -> WakeWordResult:
-        if self.event_bus is not None:
-            from ..events import WakeWordDetected
-
-            self.event_bus.publish(
-                WakeWordDetected(
-                    source="MockWakeWordDetector",
-                    keyword=keyword,
-                    confidence=confidence,
-                )
-            )
         return WakeWordResult(detected=True, keyword=keyword, confidence=confidence)

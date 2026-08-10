@@ -42,7 +42,7 @@ class ConfigurationManager:
             "health.enabled": (True, "default"),
             "scheduler.max_workers": (4, "default"),
             "scheduler.enabled": (True, "default"),
-            "modules.auto_discover": (True, "default"),
+            "modules.auto_discover": (False, "default"),
             "modules.search_paths": (["aura.modules"], "default"),
             "core.boot_timeout_sec": (30, "default"),
             "core.shutdown_timeout_sec": (15, "default"),

@@ -50,25 +50,11 @@ class EdgeTTSProvider(TTSProvider):
         voice_name = self.VOICES.get(voice, self.voice)
         audio_bytes = asyncio.run(self._synth_async(text, voice_name))
 
-        result = TTSResult(
+        return TTSResult(
             audio_bytes=audio_bytes,
             text=text,
             duration_seconds=len(text) * 0.065,  # ~65ms per character estimate
         )
-
-        if self.event_bus is not None:
-            from ..events import AudioPlaybackStarted, SpeechSynthesized
-
-            self.event_bus.publish(
-                SpeechSynthesized(
-                    source="EdgeTTSProvider",
-                    text=text,
-                    audio_bytes_length=len(audio_bytes),
-                )
-            )
-            self.event_bus.publish(AudioPlaybackStarted(source="EdgeTTSProvider", text=text))
-
-        return result
 
     async def _synth_async(self, text: str, voice_name: str) -> bytes:
         """Async helper to generate MP3 audio from Edge TTS."""
@@ -89,11 +75,6 @@ class EdgeTTSProvider(TTSProvider):
 
         # Use fallback player (PowerShell / system media player)
         self._play_fallback(result.audio_bytes)
-
-        if self.event_bus is not None:
-            from ..events import AudioPlaybackFinished
-
-            self.event_bus.publish(AudioPlaybackFinished(source="EdgeTTSProvider", text=text))
 
     def _play_fallback(self, audio_bytes: bytes) -> None:
         """Saves MP3 to temp file and plays completely for its exact duration."""

@@ -382,7 +382,6 @@ def _handle_wake(aura: AURA) -> None:
         model_size="tiny",
         chunk_duration_sec=1.5,
         on_detected=on_wake_detected,
-        event_bus=aura.event_bus,
     )
 
     detector.start()

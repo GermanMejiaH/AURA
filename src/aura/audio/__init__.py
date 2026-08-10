@@ -6,11 +6,14 @@ from .module import AudioModule
 from .silence import SilenceDetector
 from .stt import MockSTTProvider, STTProvider, STTResult
 from .tts import MockTTSProvider, TTSProvider, TTSResult
+from .types import AudioData, AudioTurnResult
 from .wakeword import MockWakeWordDetector, WakeWordDetector, WakeWordResult
 from .whisper_wakeword import WhisperWakeWordDetector
 
 __all__ = [
+    "AudioData",
     "AudioModule",
+    "AudioTurnResult",
     "AutonomousVoiceAgent",
     "EdgeTTSProvider",
     "FasterWhisperSTTProvider",

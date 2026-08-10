@@ -4,6 +4,7 @@ import tempfile
 from typing import TYPE_CHECKING, Any
 
 from .stt import STTProvider, STTResult
+from .types import AudioData
 
 if TYPE_CHECKING:
     from ..events import EventBus
@@ -75,23 +76,25 @@ class FasterWhisperSTTProvider(STTProvider):
 
     def transcribe(
         self,
-        audio_bytes: bytes,
+        audio: AudioData | bytes,
         language: str = "es",
     ) -> STTResult:
         import re
 
-        model = self._get_model()
+        raw_bytes = audio.raw_data if isinstance(audio, AudioData) else audio
 
         # Handle raw audio bytes or file path
-        if not audio_bytes:
+        if not raw_bytes:
             return STTResult(
                 text=self.default_transcript,
                 confidence=0.0,
                 language=language,
             )
 
+        model = self._get_model()
+
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(audio_bytes)
+            tmp.write(raw_bytes)
             tmp_path = tmp.name
 
         try:
@@ -156,22 +159,8 @@ class FasterWhisperSTTProvider(STTProvider):
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-        result = STTResult(
+        return STTResult(
             text=transcript,
             confidence=confidence,
             language=detected_lang,
         )
-
-        if self.event_bus is not None and result.text:
-            from ..events import SpeechRecognized
-
-            self.event_bus.publish(
-                SpeechRecognized(
-                    source="FasterWhisperSTTProvider",
-                    text=result.text,
-                    confidence=result.confidence,
-                    language=result.language,
-                )
-            )
-
-        return result

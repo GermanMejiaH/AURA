@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from .wakeword import WakeWordDetector, WakeWordResult
 
 if TYPE_CHECKING:
-    from ..events import EventBus
+    pass
 
 
 class WhisperWakeWordDetector(WakeWordDetector):
@@ -35,13 +35,11 @@ class WhisperWakeWordDetector(WakeWordDetector):
         model_size: str = "tiny",
         chunk_duration_sec: float = 1.5,
         on_detected: Callable[[WakeWordResult], None] | None = None,
-        event_bus: EventBus | None = None,
     ) -> None:
         self.keywords = [k.lower() for k in (keywords or self.DEFAULT_KEYWORDS)]
         self.model_size = model_size
         self.chunk_duration_sec = chunk_duration_sec
         self.on_detected = on_detected
-        self.event_bus = event_bus
 
         self._running = False
         self._thread: threading.Thread | None = None
@@ -116,17 +114,6 @@ class WhisperWakeWordDetector(WakeWordDetector):
         return WakeWordResult(detected=False, keyword="", confidence=0.0)
 
     def _fire_detected(self, result: WakeWordResult) -> None:
-        """Fires WakeWordDetected event on the EventBus and calls on_detected callback."""
-        if self.event_bus is not None:
-            from ..events import WakeWordDetected
-
-            self.event_bus.publish(
-                WakeWordDetected(
-                    source="WhisperWakeWordDetector",
-                    keyword=result.keyword,
-                    confidence=result.confidence,
-                )
-            )
-
+        """Calls on_detected callback when wake word is detected."""
         if self.on_detected is not None:
             self.on_detected(result)

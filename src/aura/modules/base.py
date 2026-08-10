@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import UTC
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -72,8 +73,13 @@ class BaseModule(ABC):
             self._health.last_error = error
 
     def load(self) -> None:
-        self._health.status = ModuleStatus.LOADED
-        self.on_load()
+        try:
+            self.on_load()
+            self._health.status = ModuleStatus.LOADED
+        except Exception as exc:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(exc)
+            raise
 
     def initialize(self) -> None:
         self._health.status = ModuleStatus.INITIALIZING
@@ -82,34 +88,73 @@ class BaseModule(ABC):
             self._initialized = True
             self._health.status = ModuleStatus.READY
         except Exception as exc:
+            self._initialized = False
             self._health.status = ModuleStatus.ERROR
             self._health.last_error = str(exc)
             raise
 
     def start(self) -> None:
-        self._health.status = ModuleStatus.RUNNING
-        self.on_start()
+        from datetime import datetime
+
+        try:
+            self.on_start()
+            self._health.status = ModuleStatus.RUNNING
+            self._health.started_at = datetime.now(UTC).isoformat()
+        except Exception as exc:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(exc)
+            raise
 
     def pause(self) -> None:
-        self._health.status = ModuleStatus.PAUSED
-        self.on_pause()
+        try:
+            self.on_pause()
+            self._health.status = ModuleStatus.PAUSED
+        except Exception as exc:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(exc)
+            raise
 
     def resume(self) -> None:
-        self._health.status = ModuleStatus.RUNNING
-        self.on_resume()
+        try:
+            self.on_resume()
+            self._health.status = ModuleStatus.RUNNING
+        except Exception as exc:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(exc)
+            raise
 
     def stop(self) -> None:
         self._health.status = ModuleStatus.STOPPING
         try:
             self.on_stop()
-        finally:
             self._health.status = ModuleStatus.STOPPED
+        except Exception as exc:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(exc)
+            raise
 
     def shutdown(self) -> None:
-        active = {ModuleStatus.RUNNING, ModuleStatus.PAUSED, ModuleStatus.DEGRADED}
+        active = {
+            ModuleStatus.RUNNING,
+            ModuleStatus.PAUSED,
+            ModuleStatus.DEGRADED,
+            ModuleStatus.STOPPING,
+        }
+        stop_exc: Exception | None = None
         if self._health.status in active:
-            self.stop()
-        self.on_shutdown()
+            try:
+                self.stop()
+            except Exception as exc:
+                stop_exc = exc
+        try:
+            self.on_shutdown()
+        except Exception as exc:
+            if stop_exc is None:
+                stop_exc = exc
+        if stop_exc is not None:
+            self._health.status = ModuleStatus.ERROR
+            self._health.last_error = str(stop_exc)
+            raise stop_exc
 
     def check_health(self) -> ModuleHealth:
         try:

@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..events import EventBus
+    pass
+
+
+from .types import AudioData
 
 
 @dataclass
@@ -21,10 +24,10 @@ class STTProvider(ABC):
     @abstractmethod
     def transcribe(
         self,
-        audio_bytes: bytes,
+        audio: AudioData | bytes,
         language: str = "es",
     ) -> STTResult:
-        """Transcribe audio bytes into text."""
+        """Transcribe AudioData or raw audio bytes into text."""
         ...
 
 
@@ -34,41 +37,27 @@ class MockSTTProvider(STTProvider):
     def __init__(
         self,
         default_transcript: str = "Hola AURA, ¿cuál es el estado del sistema?",
-        event_bus: EventBus | None = None,
     ) -> None:
         self.default_transcript = default_transcript
-        self.event_bus = event_bus
 
     def transcribe(
         self,
-        audio_bytes: bytes,
+        audio: AudioData | bytes,
         language: str = "es",
     ) -> STTResult:
-        if not audio_bytes or audio_bytes in (b"dummy_audio", b"mock"):
+        if isinstance(audio, AudioData):
+            transcript = audio.text_hint if audio.text_hint else self.default_transcript
+        elif not audio or audio in (b"dummy_audio", b"mock"):
             transcript = self.default_transcript
         else:
             try:
-                decoded = audio_bytes.decode("utf-8", errors="ignore").strip()
+                decoded = audio.decode("utf-8", errors="ignore").strip()
                 transcript = decoded if decoded else self.default_transcript
             except Exception:
                 transcript = self.default_transcript
 
-        result = STTResult(
+        return STTResult(
             text=transcript,
             confidence=0.99,
             language=language,
         )
-
-        if self.event_bus is not None:
-            from ..events import SpeechRecognized
-
-            self.event_bus.publish(
-                SpeechRecognized(
-                    source="MockSTTProvider",
-                    text=result.text,
-                    confidence=result.confidence,
-                    language=language,
-                )
-            )
-
-        return result

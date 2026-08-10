@@ -33,8 +33,10 @@ def test_audio_module_voice_conversation_integration(tmp_path):
     aura.subscribe("WakeWordDetected", lambda e: wakeword_events.append(e))
     aura.subscribe("SpeechRecognized", lambda e: speech_events.append(e))
 
-    # Trigger wake word
-    audio_mod.wakeword.trigger(keyword="aura")
+    # Trigger wake word event through AudioModule
+    res = audio_mod.wakeword.trigger(keyword="aura")
+    if res.detected:
+        audio_mod.publish(WakeWordDetected(source="AudioModule", keyword=res.keyword))
     assert sm.state == CognitiveState.LISTENING
 
     # Trigger voice interaction turn

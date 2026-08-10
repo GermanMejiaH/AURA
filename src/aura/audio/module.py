@@ -4,12 +4,20 @@ from typing import TYPE_CHECKING
 
 from ..config import ConfigurationManager
 from ..container import DependencyContainer
-from ..events import Event, EventBus
+from ..events import (
+    AudioPlaybackFinished,
+    AudioPlaybackStarted,
+    Event,
+    EventBus,
+    SpeechRecognized,
+    SpeechSynthesized,
+)
 from ..logging import get_logger
 from ..modules.base import BaseModule
 from .silence import SilenceDetector
 from .stt import MockSTTProvider, STTProvider
 from .tts import MockTTSProvider, TTSProvider
+from .types import AudioData, AudioTurnResult
 from .wakeword import MockWakeWordDetector, WakeWordDetector
 
 if TYPE_CHECKING:
@@ -36,13 +44,13 @@ class AudioModule(BaseModule):
         self.wakeword = (
             wakeword_detector
             if wakeword_detector is not None
-            else MockWakeWordDetector(event_bus=event_bus)
+            else MockWakeWordDetector()
         )
         self.stt = (
-            stt_provider if stt_provider is not None else MockSTTProvider(event_bus=event_bus)
+            stt_provider if stt_provider is not None else MockSTTProvider()
         )
         self.tts = (
-            tts_provider if tts_provider is not None else MockTTSProvider(event_bus=event_bus)
+            tts_provider if tts_provider is not None else MockTTSProvider()
         )
         self.silence_detector = SilenceDetector(event_bus=event_bus)
 
@@ -68,29 +76,69 @@ class AudioModule(BaseModule):
     def on_stop(self) -> None:
         self.wakeword.stop()
 
-    def trigger_voice_interaction(self, voice_text: str = "Hola AURA") -> str:
-        """Simulates or processes a complete voice interaction turn."""
+    def process_conversational_turn(self, audio_input: AudioData | bytes) -> AudioTurnResult:
+        """Processes a conversational turn: Audio -> STT -> Cognition -> TTS."""
         logger = get_logger("AudioModule")
-        logger.info(f"Voice interaction triggered with input text: '{voice_text}'")
+        logger.info("Processing conversational audio turn...")
 
-        # 1. Transcribe STT
-        stt_res = self.stt.transcribe(voice_text.encode("utf-8"))
+        # 1. Speech-to-Text Transcription
+        stt_res = self.stt.transcribe(audio_input)
 
-        # 2. Forward to CognitionModule if available in container
+        # 2. Publish SpeechRecognized Event
+        self.publish(
+            SpeechRecognized(
+                source="AudioModule",
+                text=stt_res.text,
+                confidence=stt_res.confidence,
+                language=stt_res.language,
+            )
+        )
+
+        # If transcript is empty, return empty turn
+        if not stt_res.text.strip():
+            return AudioTurnResult(
+                recognized_text="",
+                response_text="",
+                audio_output=b"",
+                duration_seconds=0.0,
+            )
+
+        # 3. Forward transcript to CognitionModule if available
+        response_text = f"Procesado: {stt_res.text}"
         if self._container is not None:
             from ..cognition import CognitionModule
 
             if self._container.has(CognitionModule):
                 cog = self._container.resolve(CognitionModule)
                 reasoning = cog.process_cognitive_cycle(stt_res.text)
+                response_text = reasoning.summary
 
-                # 3. Synthesize TTS response
-                tts_res = self.tts.synthesize(reasoning.summary)
-                return tts_res.text
+        # 4. Text-to-Speech Synthesis
+        tts_res = self.tts.synthesize(response_text)
 
-        # Fallback TTS
-        tts_res = self.tts.synthesize(f"Procesado: {stt_res.text}")
-        return tts_res.text
+        # 5. Publish Audio Playback Events
+        self.publish(
+            SpeechSynthesized(
+                source="AudioModule",
+                text=tts_res.text,
+                audio_bytes_length=len(tts_res.audio_bytes),
+            )
+        )
+        self.publish(AudioPlaybackStarted(source="AudioModule", text=tts_res.text))
+        self.publish(AudioPlaybackFinished(source="AudioModule", text=tts_res.text))
+
+        return AudioTurnResult(
+            recognized_text=stt_res.text,
+            response_text=tts_res.text,
+            audio_output=tts_res.audio_bytes,
+            duration_seconds=tts_res.duration_seconds,
+        )
+
+    def trigger_voice_interaction(self, voice_text: str = "Hola AURA") -> str:
+        """Helper method to simulate a voice interaction using a text input hint."""
+        audio_data = AudioData.create_mock(text=voice_text)
+        turn_result = self.process_conversational_turn(audio_data)
+        return turn_result.response_text
 
     def _on_wakeword_detected(self, event: Event) -> None:
         logger = get_logger("AudioModule")

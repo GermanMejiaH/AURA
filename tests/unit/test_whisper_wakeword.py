@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 from aura.audio import WhisperWakeWordDetector
 from aura.audio.wakeword import WakeWordResult
-from aura.events import EventBus
 
 
 def test_whisper_wakeword_detector_is_not_active_initially():
@@ -86,12 +85,9 @@ def test_whisper_wakeword_fires_callback():
     assert callback_called[0].keyword == "aura"
 
 
-def test_whisper_wakeword_fires_event_bus():
-    bus = EventBus()
-    events = []
-    bus.subscribe("WakeWordDetected", lambda e: events.append(e))
-
-    detector = WhisperWakeWordDetector(keywords=["aura"], event_bus=bus)
+def test_whisper_wakeword_fires_callback_on_detected():
+    events: list[WakeWordResult] = []
+    detector = WhisperWakeWordDetector(keywords=["aura"], on_detected=lambda r: events.append(r))
     wake_result = WakeWordResult(detected=True, keyword="aura", confidence=0.90)
     detector._fire_detected(wake_result)
 
