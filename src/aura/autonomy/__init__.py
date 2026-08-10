@@ -4,6 +4,7 @@ from .goals import AutonomousGoal, GoalManager
 from .learning import LearningEngine
 from .module import AutonomyModule
 from .observation import Observation
+from .planner import AgentPlanner
 from .planning import LongHorizonPlanner, SubGoal
 from .prioritization import PriorityEngine
 
@@ -12,6 +13,7 @@ __all__ = [
     "AgentExecutor",
     "AgentGoal",
     "AgentPlan",
+    "AgentPlanner",
     "AgentTask",
     "AutonomousGoal",
     "AutonomyModule",
@@ -23,3 +25,4 @@ __all__ = [
     "SubGoal",
     "TaskStatus",
 ]
+
