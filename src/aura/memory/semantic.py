@@ -18,12 +18,21 @@ class SemanticMemory:
         "cumpleanos",
         "nombre",
         "color_favorito",
+        "comida_favorita",
+        "pelicula_favorita",
+        "cancion_favorita",
+        "deporte_favorito",
+        "plato_favorito",
         "carrera",
         "moto",
         "email",
         "telefono",
         "edad",
         "actividad",
+        "ciudad",
+        "pais",
+        "país",
+        "fecha_de_nacimiento",
     }
 
     def __init__(
@@ -43,8 +52,7 @@ class SemanticMemory:
         pred_clean = predicate.lower().strip()
         return (
             pred_clean in cls.SINGLE_VALUED_PREDICATES
-            or pred_clean.endswith("_favorito")
-            or pred_clean.startswith("mi_")
+            or pred_clean.endswith(("_favorito", "_favorita"))
         )
 
     def load_from_store(self) -> None:
@@ -55,22 +63,41 @@ class SemanticMemory:
                 for fact in persisted:
                     if fact.id not in existing_ids:
                         self._facts.append(fact)
+                from ..logging import get_logger
+
+                logger = get_logger("SemanticMemory")
+                logger.info(f"Loaded {len(self._facts)} facts from memory store.")
 
     def add_fact(self, fact: Fact) -> Fact:
         with self._lock:
+            subj_clean = fact.subject.lower().strip()
+            pred_clean = fact.predicate.lower().strip()
+            obj_clean = fact.object_val.lower().strip()
+
             if self.is_single_valued(fact.predicate):
                 # Remove obsolete facts for the same subject & single-valued predicate
                 obsolete = [
                     f
                     for f in self._facts
-                    if f.subject.lower() == fact.subject.lower()
-                    and f.predicate.lower() == fact.predicate.lower()
+                    if f.subject.lower().strip() == subj_clean
+                    and f.predicate.lower().strip() == pred_clean
                 ]
                 for old_f in obsolete:
                     if old_f in self._facts:
                         self._facts.remove(old_f)
                     if self.store is not None:
                         self.store.delete_fact(old_f.id)
+
+            # Idempotency check: if identical fact (subject, predicate, object_val) exists:
+            existing_identical = [
+                f
+                for f in self._facts
+                if f.subject.lower().strip() == subj_clean
+                and f.predicate.lower().strip() == pred_clean
+                and f.object_val.lower().strip() == obj_clean
+            ]
+            if existing_identical:
+                return existing_identical[0]
 
             self._facts.append(fact)
             if self.store is not None:

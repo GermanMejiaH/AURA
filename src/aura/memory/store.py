@@ -161,6 +161,8 @@ class SQLiteMemoryStore(MemoryStore):
                 if where_clauses:
                     query += " WHERE " + " AND ".join(where_clauses)
 
+                query += " ORDER BY created_at DESC"
+
                 cursor = conn.execute(query, params)
                 rows = cursor.fetchall()
                 facts: list[Fact] = []

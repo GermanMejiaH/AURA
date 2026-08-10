@@ -20,23 +20,69 @@ class ExplicitMemoryDirective:
 class ExplicitMemoryDetector:
     """Detects unambiguous memory commands in user utterances."""
 
-    UNAMBIGUOUS_PATTERNS = (
-        r"^(?:hola|buenas|hey|oye)?\s*(?:aura,?\s*)?"
-        r"(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+(?:que\s+)?(.+)$",
-        r"^(?:aura,?\s*)?(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+(?:que\s+)?(.+)$",
+    # Matches optional preambles (ahora, bueno, oye, mira, por favor, hey, hola, aura)
+    # followed by an explicit imperative directive verb.
+    DIRECTIVE_PATTERN = re.compile(
+        r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+        r"(quiero\s+que\s+recuerdes|recuerda|guarda|no\s+olvides)\s+(?:que\s+)?(.+)$",
+        flags=re.IGNORECASE,
     )
+
+    @classmethod
+    def _normalize_predicate(cls, raw_key: str) -> str:
+        # Strip temporal adverbs and conversational words
+        k = re.sub(
+            r"\b(ahora|actualmente|hoy|hoy\s+en\s+dia|en\s+este\s+momento|de\s+ahora\s+en\s+adelante)\b",
+            "",
+            raw_key,
+            flags=re.IGNORECASE,
+        )
+        # Strip leading possessives and articles
+        k = re.sub(r"^\s*(?:mi|mis|el|la|los|las)\s+", "", k, flags=re.IGNORECASE)
+        k = k.strip().replace(" ", "_")
+        return re.sub(r"_+", "_", k).strip("_")
 
     @classmethod
     def detect(cls, input_text: str) -> ExplicitMemoryDirective:
         cleaned = input_text.strip().rstrip(".")
         cleaned_lower = cleaned.lower()
 
+        # 1. Reject questions / inquiry statements (e.g. ¿recuerdas?, ¿cuál es?)
+        if (
+            "?" in input_text
+            or "¿" in input_text
+            or re.search(r"\brecuerdas\b", cleaned_lower)
+            or re.search(r"\bsabes\s+si\b", cleaned_lower)
+            or re.search(r"\bme\s+gustaria\b", cleaned_lower)
+        ):
+            return ExplicitMemoryDirective(detected=False)
+
+        # 2. Reject negative recollections or personal statements without imperative command
+        if re.search(r"\bno\s+recuerdo\b", cleaned_lower) or re.search(
+            r"\bno\s+me\s+acuerdo\b", cleaned_lower
+        ):
+            return ExplicitMemoryDirective(detected=False)
+
+        if re.search(r"^\s*recuerdo\b", cleaned_lower):
+            return ExplicitMemoryDirective(detected=False)
+
+        # 3. Match explicit directive pattern or update statement
         extracted_body: str | None = None
-        for pattern in cls.UNAMBIGUOUS_PATTERNS:
-            match = re.search(pattern, cleaned_lower, flags=re.IGNORECASE)
-            if match:
-                extracted_body = match.group(1).strip()
-                break
+        match = cls.DIRECTIVE_PATTERN.search(cleaned)
+        if match:
+            extracted_body = match.group(2).strip()
+        else:
+            # Check for direct update statement: "(ahora|actualmente...) mi <key> es <val>"
+            update_match = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"(?:mi|mis)\s+([\w\s]+?)\s+es\s+(.+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if update_match:
+                raw_k = update_match.group(1).strip()
+                v_val = update_match.group(2).strip()
+                extracted_body = f"mi {raw_k} es {v_val}"
 
         if not extracted_body:
             return ExplicitMemoryDirective(detected=False)
@@ -49,10 +95,14 @@ class ExplicitMemoryDetector:
                 first_part = parts[0].strip()
                 last_part = parts[-1].strip()
                 # Parse "mi <key> es" and apply last_part as val
-                m_key = re.match(r"^mi\s+([\w\s]+?)\s+es\s+", first_part, flags=re.IGNORECASE)
+                m_key = re.match(
+                    r"^(?:ahora\s+|actualmente\s+)?mi\s+([\w\s]+?)\s+es\s+",
+                    first_part,
+                    flags=re.IGNORECASE,
+                )
                 if m_key:
                     raw_k = m_key.group(1).strip()
-                    k_clean = raw_k.replace(" ", "_")
+                    k_clean = cls._normalize_predicate(raw_k)
                     val_clean = re.sub(r"^(?:el\s+)?", "", last_part, flags=re.IGNORECASE).strip()
                     val_final = f"el {val_clean}" if not last_part.startswith("el ") else last_part
                     confirm_msg = f"Claro, he registrado que tu {raw_k} es {val_final}."
@@ -66,35 +116,41 @@ class ExplicitMemoryDetector:
                     )
 
         # Parse extracted body for structured subject/predicate/object
-        # 1. "mi <key> es <val>"
-        match_mi = re.match(r"^mi\s+([\w\s]+?)\s+es\s+(.+)$", extracted_body, flags=re.IGNORECASE)
+        # A. "(ahora | actualmente)? mi <key> es <val>"
+        match_mi = re.match(
+            r"^(?:ahora\s+|actualmente\s+|hoy\s+)?mi\s+([\w\s]+?)\s+es\s+(.+)$",
+            extracted_body,
+            flags=re.IGNORECASE,
+        )
         if match_mi:
             raw_key = match_mi.group(1).strip()
             val = match_mi.group(2).strip()
-            key_clean = raw_key.replace(" ", "_")
+            key_clean = cls._normalize_predicate(raw_key)
+            raw_k_display = raw_key.replace("ahora", "").replace("actualmente", "").strip()
             return ExplicitMemoryDirective(
                 detected=True,
                 subject="usuario",
                 predicate=key_clean,
                 object_val=val,
                 raw_statement=cleaned,
-                confirmation_response=f"Claro, recordaré que tu {raw_key} es {val}.",
+                confirmation_response=f"Claro, recordaré que tu {raw_k_display} es {val}.",
             )
 
-        # 2. "estoy <verb/action>"
-        match_estoy = re.match(r"^estoy\s+(.+)$", extracted_body, flags=re.IGNORECASE)
-        if match_estoy:
-            val = match_estoy.group(1).strip()
+        # B. "estudio <action>" or "estoy <action>"
+        match_estudio = re.match(r"^(?:estudio|estoy)\s+(.+)$", extracted_body, flags=re.IGNORECASE)
+        if match_estudio:
+            val = match_estudio.group(1).strip()
+            val_final = f"estudiando {val}" if not val.startswith("estudiando") else val
             return ExplicitMemoryDirective(
                 detected=True,
                 subject="usuario",
                 predicate="actividad",
-                object_val=f"estudiando {val}" if not val.startswith("estudiando") else val,
+                object_val=val_final,
                 raw_statement=cleaned,
-                confirmation_response=f"Claro, recordaré que estás {val}.",
+                confirmation_response=f"Claro, recordaré que estás {val_final}.",
             )
 
-        # 3. Fallback for general explicit facts
+        # C. Fallback for general explicit facts
         return ExplicitMemoryDirective(
             detected=True,
             subject="usuario",

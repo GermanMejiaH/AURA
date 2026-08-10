@@ -17,6 +17,49 @@ from aura.memory import (
 )
 
 
+def test_is_single_valued_predicates() -> None:
+    assert SemanticMemory.is_single_valued("comida_favorita") is True
+    assert SemanticMemory.is_single_valued("pelicula_favorita") is True
+    assert SemanticMemory.is_single_valued("color_favorito") is True
+    assert SemanticMemory.is_single_valued("cumpleaños") is True
+    assert SemanticMemory.is_single_valued("ciudad") is True
+    assert SemanticMemory.is_single_valued("actividad") is True
+
+
+def test_single_valued_replacement_pizza_hamburguesa(tmp_path: Path) -> None:
+    db_file = str(tmp_path / "test_comida.db")
+    store = SQLiteMemoryStore(db_path=db_file)
+
+    bus = EventBus()
+    semantic = SemanticMemory(event_bus=bus, store=store)
+
+    # 1. Save pizza
+    f1 = Fact(subject="usuario", predicate="comida_favorita", object_val="la pizza")
+    semantic.add_fact(f1)
+    assert len(semantic.all_facts()) == 1
+    assert semantic.all_facts()[0].object_val == "la pizza"
+
+    # 2. Save hamburguesa (updates fact)
+    f2 = Fact(subject="usuario", predicate="comida_favorita", object_val="la hamburguesa")
+    semantic.add_fact(f2)
+    assert len(semantic.all_facts()) == 1
+    assert semantic.all_facts()[0].object_val == "la hamburguesa"
+
+    # 3. Idempotency test: add hamburguesa again
+    f3 = Fact(subject="usuario", predicate="comida_favorita", object_val="la hamburguesa")
+    semantic.add_fact(f3)
+    assert len(semantic.all_facts()) == 1
+
+    store.close()
+
+    # 4. Verify SQLite on disk contains ONLY hamburguesa
+    store_check = SQLiteMemoryStore(db_path=db_file)
+    db_facts = store_check.get_facts(subject="usuario", predicate="comida_favorita")
+    assert len(db_facts) == 1
+    assert db_facts[0].object_val == "la hamburguesa"
+    store_check.close()
+
+
 def test_semantic_retrieval_cumpleanos_variations(tmp_path: Path) -> None:
     db_file = str(tmp_path / "test_cumple.db")
     store = SQLiteMemoryStore(db_path=db_file)

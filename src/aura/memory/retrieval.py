@@ -161,7 +161,10 @@ class MemoryRetrievalEngine:
             if s > 0.1 or len(all_facts) <= 3:
                 fact_scores.append((s, f))
 
-        fact_scores.sort(key=lambda x: x[0], reverse=True)
+        fact_scores.sort(
+            key=lambda x: (x[0], x[1].created_at if hasattr(x[1], "created_at") else 0),
+            reverse=True,
+        )
         matched_facts = [f for _, f in fact_scores[:limit]]
 
         # 2. Search User Preferences
@@ -182,6 +185,14 @@ class MemoryRetrievalEngine:
             episodes=episodes[:limit],
             facts=matched_facts[:limit],
             preferences=matched_prefs[:limit],
+        )
+
+        from ..logging import get_logger
+
+        logger = get_logger("MemoryRetrievalEngine")
+        logger.info(
+            f"Query: '{search_text}' -> found {len(matched_facts)} facts, "
+            f"{len(matched_prefs)} preferences, {len(episodes)} episodes"
         )
 
         if self.event_bus is not None:
