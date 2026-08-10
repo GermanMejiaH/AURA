@@ -565,3 +565,25 @@ class AgentSecurityAlert(Event):
     plan_id: str = ""
     task_id: str = ""
     __event_name__: ClassVar[str] = "AgentSecurityAlert"
+
+
+@dataclass(frozen=True)
+class SessionCreated(Event):
+    session_id: str = ""
+    title: str = "Conversación"
+    user_id: str = "default_user"
+    __event_name__: ClassVar[str] = "SessionCreated"
+
+
+@dataclass(frozen=True)
+class SessionClosed(Event):
+    session_id: str = ""
+    __event_name__: ClassVar[str] = "SessionClosed"
+
+
+@dataclass(frozen=True)
+class ConversationTurnStored(Event):
+    session_id: str = ""
+    turn_id: str = ""
+    role: str = "user"
+    __event_name__: ClassVar[str] = "ConversationTurnStored"

@@ -160,7 +160,35 @@ class SQLiteMemoryStore(MemoryStore):
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_sessions (
+                        session_id TEXT PRIMARY KEY,
+                        user_id TEXT NOT NULL DEFAULT 'default_user',
+                        title TEXT NOT NULL DEFAULT 'Conversación',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS conversation_turns (
+                        turn_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        intent_type TEXT,
+                        timestamp TEXT NOT NULL,
+                        metadata_json TEXT NOT NULL DEFAULT '{}',
+                        FOREIGN KEY (session_id)
+                        REFERENCES memory_sessions(session_id) ON DELETE CASCADE
+
+                    )
+                    """
+                )
             logger.info(f"SQLiteMemoryStore initialized at '{self.db_path}'")
+
         except Exception as exc:
             logger.error(f"Failed to initialize SQLite database '{self.db_path}': {exc}")
 

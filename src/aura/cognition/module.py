@@ -68,6 +68,9 @@ class CognitionModule(BaseModule):
         self.coordinator = ActionCoordinator(event_bus=event_bus)
         self.context_builder = CognitiveContextBuilder(container=container)
         self.plan_store = plan_store if plan_store is not None else AgentPlanStore()
+        from ..memory import CognitiveContextManager
+
+        self.cognitive_context_manager = CognitiveContextManager(event_bus=event_bus)
         from .tool_orchestrator import ToolOrchestrator
 
         self.tool_orchestrator = ToolOrchestrator(event_bus=event_bus)
@@ -90,6 +93,11 @@ class CognitionModule(BaseModule):
             self._container.register(Planner, instance=self.planner)
             self._container.register(ActionCoordinator, instance=self.coordinator)
             self._container.register(AgentPlanStore, instance=self.plan_store)
+            from ..memory import CognitiveContextManager
+
+            self._container.register(
+                CognitiveContextManager, instance=self.cognitive_context_manager
+            )
             from .tool_orchestrator import ToolOrchestrator
 
             self._container.register(ToolOrchestrator, instance=self.tool_orchestrator)
