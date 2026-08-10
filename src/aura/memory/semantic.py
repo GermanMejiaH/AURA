@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from .models import Fact
 
@@ -12,6 +12,19 @@ if TYPE_CHECKING:
 
 class SemanticMemory:
     """Manages semantic long-term memory (abstract concepts, generalized facts)."""
+
+    SINGLE_VALUED_PREDICATES: ClassVar[set[str]] = {
+        "cumpleaños",
+        "cumpleanos",
+        "nombre",
+        "color_favorito",
+        "carrera",
+        "moto",
+        "email",
+        "telefono",
+        "edad",
+        "actividad",
+    }
 
     def __init__(
         self,
@@ -25,6 +38,15 @@ class SemanticMemory:
         if self.store is not None:
             self.load_from_store()
 
+    @classmethod
+    def is_single_valued(cls, predicate: str) -> bool:
+        pred_clean = predicate.lower().strip()
+        return (
+            pred_clean in cls.SINGLE_VALUED_PREDICATES
+            or pred_clean.endswith("_favorito")
+            or pred_clean.startswith("mi_")
+        )
+
     def load_from_store(self) -> None:
         with self._lock:
             if self.store is not None:
@@ -36,6 +58,20 @@ class SemanticMemory:
 
     def add_fact(self, fact: Fact) -> Fact:
         with self._lock:
+            if self.is_single_valued(fact.predicate):
+                # Remove obsolete facts for the same subject & single-valued predicate
+                obsolete = [
+                    f
+                    for f in self._facts
+                    if f.subject.lower() == fact.subject.lower()
+                    and f.predicate.lower() == fact.predicate.lower()
+                ]
+                for old_f in obsolete:
+                    if old_f in self._facts:
+                        self._facts.remove(old_f)
+                    if self.store is not None:
+                        self.store.delete_fact(old_f.id)
+
             self._facts.append(fact)
             if self.store is not None:
                 self.store.save_fact(fact)

@@ -121,14 +121,11 @@ class CognitionModule(BaseModule):
 
         # 2. Build Cognitive Context
         t0 = time.perf_counter()
-        default_identity = (
-            "Eres AURA (Adaptive Unified Reasoning Assistant), asistente de voz en español. "
-            "Respondes de forma natural, concisa y directa (1 a 3 oraciones)."
-        )
+        default_identity = CognitiveContextBuilder.DEFAULT_INSTRUCTION
         system_identity = (
             self._config.get_typed("llm.system_identity", str, default_identity)
             if self._config is not None
-            else ""
+            else default_identity
         )
         cognitive_context = self.context_builder.build(
             input_text=input_text,

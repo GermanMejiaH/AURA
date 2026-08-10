@@ -32,8 +32,9 @@ class CognitiveContext:
             parts.append(f"Entidades percibidas en el entorno (CWM): [{entities_str}].")
 
         if self.relevant_memories:
-            mem_str = " | ".join(self.relevant_memories[:5])
-            parts.append(f"Conocimiento relevante en memoria: {mem_str}.")
+            parts.append("\nRECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO:")
+            for m in self.relevant_memories[:5]:
+                parts.append(f"  • {m}")
 
         return "\n".join(parts)
 
@@ -55,6 +56,17 @@ class CognitiveContext:
 class CognitiveContextBuilder:
     """Compiles structured CognitiveContext from container modules."""
 
+    DEFAULT_INSTRUCTION = (
+        "Eres AURA (Adaptive Unified Reasoning Assistant), un asistente cognitivo inteligente y "
+        "autónomo. Respondes siempre en español de forma natural, concisa y directa por voz "
+        "(máximo 1 a 3 oraciones breves). "
+        "REGLA DE MEMORIA: Si el usuario pregunta sobre datos personales, gustos o hechos "
+        "pasados y la respuesta está presente en 'RECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO', "
+        "DEBES responder utilizando explícitamente dicha información. "
+        "NUNCA afirmes que no recuerdas, que no tienes acceso a la información o que no puedes "
+        "recordar conversaciones pasadas si el dato está presente en la memoria."
+    )
+
     def __init__(self, container: DependencyContainer | None = None) -> None:
         self.container = container
 
@@ -64,11 +76,7 @@ class CognitiveContextBuilder:
         system_instruction: str = "",
         working_memory: WorkingMemory | None = None,
     ) -> CognitiveContext:
-        instruction = system_instruction or (
-            "Eres AURA (Adaptive Unified Reasoning Assistant), un asistente cognitivo inteligente "
-            "y autónomo. Respondes siempre en español de forma natural, concisa y directa por voz "
-            "(máximo 1 a 3 oraciones breves por respuesta)."
-        )
+        instruction = system_instruction or self.DEFAULT_INSTRUCTION
 
         history: list[dict[str, str]] = []
         if working_memory is not None:
@@ -100,8 +108,9 @@ class CognitiveContextBuilder:
                     mem = self.container.resolve(MemoryModule)
                     retrieval = mem.retrieval.query(input_text)
                     relevant_memories = [
-                        f"{f.subject} {f.predicate} {f.object_val}" for f in retrieval.facts
-                    ] + [f"{p.key}={p.value}" for p in retrieval.preferences]
+                        f"[{f.predicate} del {f.subject}]: {f.object_val}"
+                        for f in retrieval.facts
+                    ] + [f"[{p.key}]: {p.value}" for p in retrieval.preferences]
             except Exception:
                 pass
 

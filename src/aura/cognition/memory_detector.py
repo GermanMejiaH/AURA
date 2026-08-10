@@ -21,13 +21,14 @@ class ExplicitMemoryDetector:
     """Detects unambiguous memory commands in user utterances."""
 
     UNAMBIGUOUS_PATTERNS = (
-        r"^(?:aura,?\s*)?(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+que\s+(.+)$",
-        r"^(?:aura,?\s*)?(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+(.+)$",
+        r"^(?:hola|buenas|hey|oye)?\s*(?:aura,?\s*)?"
+        r"(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+(?:que\s+)?(.+)$",
+        r"^(?:aura,?\s*)?(?:quiero que recuerdes|recuerda|guarda|no olvides)\s+(?:que\s+)?(.+)$",
     )
 
     @classmethod
     def detect(cls, input_text: str) -> ExplicitMemoryDirective:
-        cleaned = input_text.strip()
+        cleaned = input_text.strip().rstrip(".")
         cleaned_lower = cleaned.lower()
 
         extracted_body: str | None = None
@@ -39,6 +40,30 @@ class ExplicitMemoryDetector:
 
         if not extracted_body:
             return ExplicitMemoryDirective(detected=False)
+
+        # Handle self-correction phrases in single sentence: "..., digo no, el 2 de agosto"
+        correction_patterns = [r",\s*digo\s+no,\s*", r",\s*no,\s*", r"\s+digo\s+no,\s*"]
+        for c_pat in correction_patterns:
+            if re.search(c_pat, extracted_body, flags=re.IGNORECASE):
+                parts = re.split(c_pat, extracted_body, flags=re.IGNORECASE)
+                first_part = parts[0].strip()
+                last_part = parts[-1].strip()
+                # Parse "mi <key> es" and apply last_part as val
+                m_key = re.match(r"^mi\s+([\w\s]+?)\s+es\s+", first_part, flags=re.IGNORECASE)
+                if m_key:
+                    raw_k = m_key.group(1).strip()
+                    k_clean = raw_k.replace(" ", "_")
+                    val_clean = re.sub(r"^(?:el\s+)?", "", last_part, flags=re.IGNORECASE).strip()
+                    val_final = f"el {val_clean}" if not last_part.startswith("el ") else last_part
+                    confirm_msg = f"Claro, he registrado que tu {raw_k} es {val_final}."
+                    return ExplicitMemoryDirective(
+                        detected=True,
+                        subject="usuario",
+                        predicate=k_clean,
+                        object_val=val_final,
+                        raw_statement=cleaned,
+                        confirmation_response=confirm_msg,
+                    )
 
         # Parse extracted body for structured subject/predicate/object
         # 1. "mi <key> es <val>"
