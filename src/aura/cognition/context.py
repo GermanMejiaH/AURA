@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from ..container import DependencyContainer
 from .working_memory import WorkingMemory
+
+if TYPE_CHECKING:
+    from ..container import DependencyContainer
+    from .identity import AURAIdentity
+    from .session import SessionContext
 
 
 @dataclass
@@ -17,10 +22,32 @@ class CognitiveContext:
     world_entities: list[str] = field(default_factory=list)
     relevant_memories: list[str] = field(default_factory=list)
     available_tools: list[dict[str, str]] = field(default_factory=list)
+    identity: AURAIdentity | None = None
+    session_context: SessionContext | None = None
 
     def to_system_prompt(self) -> str:
         """Formats identity, background context, memory, and tools into a system prompt."""
-        parts = [self.system_instruction]
+        parts: list[str] = []
+
+        if self.identity is not None:
+            parts.append(
+                f"[IDENTIDAD DE AURA]: Nombre: {self.identity.name} | "
+                f"Misión: {self.identity.mission} | "
+                f"Estilo: {self.identity.personality_style} | Idioma: {self.identity.language}"
+            )
+
+        parts.append(self.system_instruction)
+
+        if self.session_context is not None:
+            sess_info: list[str] = []
+            if self.session_context.current_topic:
+                sess_info.append(f"Tema: {self.session_context.current_topic}")
+            if self.session_context.active_task:
+                sess_info.append(f"Tarea: {self.session_context.active_task}")
+            if self.session_context.last_intent:
+                sess_info.append(f"Intención reciente: {self.session_context.last_intent}")
+            if sess_info:
+                parts.append(f"[ESTADO CONTEXTUAL DE SESIÓN]: {', '.join(sess_info)}")
 
         if self.available_tools:
             names = [f"'{t.get('name')}'" for t in self.available_tools if t.get("name")]
@@ -85,8 +112,28 @@ class CognitiveContextBuilder:
         world_entities: list[str] = []
         relevant_memories: list[str] = []
         available_tools: list[dict[str, str]] = []
+        identity_obj = None
+        session_obj = None
 
         if self.container is not None:
+            # Pull IdentityManager if available
+            try:
+                from .identity import IdentityManager
+
+                if self.container.has(IdentityManager):
+                    identity_obj = self.container.resolve(IdentityManager).get_identity()
+            except Exception:
+                pass
+
+            # Pull SessionManager if available
+            try:
+                from .session import SessionManager
+
+                if self.container.has(SessionManager):
+                    session_obj = self.container.resolve(SessionManager).get_context()
+            except Exception:
+                pass
+
             # Pull CWM entities if available
             try:
                 from ..world import CognitiveWorldModel
@@ -134,4 +181,6 @@ class CognitiveContextBuilder:
             world_entities=world_entities,
             relevant_memories=relevant_memories,
             available_tools=available_tools,
+            identity=identity_obj,
+            session_context=session_obj,
         )

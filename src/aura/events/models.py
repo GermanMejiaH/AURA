@@ -445,3 +445,20 @@ class PolicyUpdated(Event):
     policy_name: str = ""
     version: str = "1.0"
     __event_name__: ClassVar[str] = "PolicyUpdated"
+
+
+@dataclass(frozen=True)
+class IntentDetected(Event):
+    intent_type: str = "casual_conversation"
+    confidence: float = 1.0
+    raw_text: str = ""
+    __event_name__: ClassVar[str] = "IntentDetected"
+
+
+@dataclass(frozen=True)
+class SessionContextUpdated(Event):
+    session_id: str = ""
+    current_topic: str = ""
+    active_task: str = ""
+    last_intent: str = ""
+    __event_name__: ClassVar[str] = "SessionContextUpdated"

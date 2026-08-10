@@ -13,9 +13,12 @@ from .attention import AttentionManager
 from .context import CognitiveContextBuilder
 from .decision import DecisionEngine
 from .factory import create_llm_provider
+from .identity import IdentityManager
+from .intent import IntentDetector
 from .planner import Planner
 from .provider import LLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
+from .session import SessionManager
 from .states import CognitiveState, CognitiveStateMachine
 from .working_memory import WorkingMemory
 
@@ -43,6 +46,9 @@ class CognitionModule(BaseModule):
         )
         self.attention = AttentionManager()
         self.working_memory = WorkingMemory()
+        self.identity_manager = IdentityManager(config=config)
+        self.session_manager = SessionManager(event_bus=event_bus)
+        self.intent_detector = IntentDetector()
         self.llm_provider: LLMProvider = (
             llm_provider
             if llm_provider is not None
@@ -66,6 +72,9 @@ class CognitionModule(BaseModule):
             self._container.register(CognitiveStateMachine, instance=self.state_machine)
             self._container.register(AttentionManager, instance=self.attention)
             self._container.register(WorkingMemory, instance=self.working_memory)
+            self._container.register(IdentityManager, instance=self.identity_manager)
+            self._container.register(SessionManager, instance=self.session_manager)
+            self._container.register(IntentDetector, instance=self.intent_detector)
             self._container.register(LLMProvider, instance=self.llm_provider)
             self._container.register(ReasoningEngine, instance=self.reasoning)
             self._container.register(DecisionEngine, instance=self.decision)
@@ -85,10 +94,31 @@ class CognitionModule(BaseModule):
         )
 
     def process_cognitive_cycle(self, input_text: str, source: str = "user") -> ReasoningResult:
-        """Runs cognitive cycle: Attention -> Memory -> Context -> Reasoning -> Action."""
+        """Runs cognitive cycle: Attention -> Intent -> Session -> Memory -> Context."""
         logger = get_logger("CognitionModule")
         t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
+
+        # 0. Intent detection & Session update
+        detected_intent = self.intent_detector.detect(input_text)
+        self.session_manager.update_intent(detected_intent)
+
+        if self._event_bus is not None:
+            from ..events import IntentDetected
+
+            intent_name = (
+                detected_intent.intent_type.value
+                if hasattr(detected_intent.intent_type, "value")
+                else str(detected_intent.intent_type)
+            )
+            self._event_bus.publish(
+                IntentDetected(
+                    source="CognitionModule",
+                    intent_type=intent_name,
+                    confidence=detected_intent.confidence,
+                    raw_text=input_text,
+                )
+            )
 
         # 1. Attention evaluation & Memory Directive check
         att_item = self.attention.evaluate_event("UserRequest", {"text": input_text}, source=source)
@@ -156,9 +186,10 @@ class CognitionModule(BaseModule):
         self.state_machine.transition_to(CognitiveState.EXECUTING, reason="executing_plan")
         self.coordinator.execute_plan(plan)
 
-        # 7. Complete cycle -> Working Memory update & IDLE
+        # 7. Complete cycle -> Working Memory update, Session turn increment & IDLE
         self.working_memory.add_conversation_turn("user", input_text)
         self.working_memory.add_conversation_turn("assistant", reasoning_res.summary)
+        self.session_manager.record_turn()
         self.state_machine.transition_to(CognitiveState.IDLE, reason="cycle_complete")
 
         t_total = time.perf_counter() - t_cycle_start
