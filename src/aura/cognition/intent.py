@@ -52,6 +52,7 @@ class IntentDetector:
 
     GREETING_PATTERNS = (
         r"^(?:hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|hey|saludos)\b",
+        r"\bhola,?\s*(?:aura|laura)\b",
     )
 
     FAREWELL_PATTERNS = (
@@ -67,11 +68,19 @@ class IntentDetector:
     )
 
     TASK_PATTERNS = (
-        r"^(?:busca|analiza|crea|organiza|programa|revisa)\b",
+        r"^(?:busca|analiza|crea|organiza|programa|revisa|organizar)\b",
     )
 
     COMMAND_PATTERNS = (
         r"^(?:apaga|enciende|mueve|ejecuta|navega|reproduce)\b",
+    )
+
+    TOPIC_PATTERNS = (
+        r"\b(?:hablemos|hablando|sobre|de|pensando\s+en|interesa)\s+([a-zA-ZáéíóúñÁÉÍÓÚÑ]{3,20})\b",
+    )
+
+    PERSONAL_INDICATORS = (
+        r"\b(?:mi|mis|m[ií]o|m[ií]as|yo|tengo|llamo|llamaba|nombre|comida|perro|perra|mascota|casa|cumplea[ñn]os|gusto|favorit[oa]|estudi[oa]|estudiando|trabaj[oa]|trabajando|viv[oí]|vivir|preferencia|actividad)\b",
     )
 
     @classmethod
@@ -84,6 +93,14 @@ class IntentDetector:
             )
 
         text_clean = input_text.strip().lower()
+        extracted_params: dict[str, Any] = {}
+
+        # Topic extraction heuristic
+        for topic_pat in cls.TOPIC_PATTERNS:
+            match = re.search(topic_pat, text_clean, re.IGNORECASE)
+            if match:
+                extracted_params["topic"] = match.group(1).strip()
+                break
 
         # 1. Check Explicit Memory Update
         for pat in cls.MEMORY_UPDATE_PATTERNS:
@@ -91,6 +108,7 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.MEMORY_UPDATE,
                     confidence=0.95,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -100,6 +118,7 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.MEMORY_QUERY,
                     confidence=0.95,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -109,6 +128,7 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.GREETING,
                     confidence=0.95,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -118,6 +138,7 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.FAREWELL,
                     confidence=0.95,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -127,6 +148,7 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.CONFIRMATION,
                     confidence=0.90,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -136,26 +158,29 @@ class IntentDetector:
                 return Intent(
                     intent_type=IntentType.CANCELLATION,
                     confidence=0.90,
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
         # 7. Check Task Request
         for pat in cls.TASK_PATTERNS:
             if re.search(pat, text_clean, re.IGNORECASE):
+                extracted_params["task"] = text_clean
                 return Intent(
                     intent_type=IntentType.TASK_REQUEST,
                     confidence=0.85,
-                    parameters={"task": text_clean},
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
         # 8. Check Command
         for pat in cls.COMMAND_PATTERNS:
             if re.search(pat, text_clean, re.IGNORECASE):
+                extracted_params["command"] = text_clean
                 return Intent(
                     intent_type=IntentType.COMMAND,
                     confidence=0.85,
-                    parameters={"command": text_clean},
+                    parameters=extracted_params,
                     raw_text=input_text,
                 )
 
@@ -168,6 +193,7 @@ class IntentDetector:
             return Intent(
                 intent_type=IntentType.QUESTION,
                 confidence=0.80,
+                parameters=extracted_params,
                 raw_text=input_text,
             )
 
@@ -175,5 +201,38 @@ class IntentDetector:
         return Intent(
             intent_type=IntentType.CASUAL_CONVERSATION,
             confidence=0.70,
+            parameters=extracted_params,
             raw_text=input_text,
         )
+
+    @classmethod
+    def should_query_persistent_memory(cls, intent: Intent, input_text: str) -> bool:
+        """Determines intent-aware persistent memory retrieval policy."""
+        # Never query SQLite for greetings, farewells, casual chat, confirmation, cancellation
+        if intent.intent_type in (
+            IntentType.GREETING,
+            IntentType.FAREWELL,
+            IntentType.CASUAL_CONVERSATION,
+            IntentType.CONFIRMATION,
+            IntentType.CANCELLATION,
+        ):
+            return False
+
+        # Always query for explicit memory operations
+        if intent.intent_type in (IntentType.MEMORY_QUERY, IntentType.MEMORY_UPDATE):
+            return True
+
+        # For Questions, Task requests, Commands: query if personal context indicators exist
+        text_clean = input_text.strip().lower()
+        for pat in cls.PERSONAL_INDICATORS:
+            if re.search(pat, text_clean, re.IGNORECASE):
+                return True
+
+        # For questions starting with ¿cómo?, ¿quién?, ¿cuál?, ¿dónde?, ¿qué?: default query
+        if intent.intent_type == IntentType.QUESTION and not re.search(
+            r"\b(?:luz|gravedad|tierra|sol|luna|mapa|clima|tiempo|pa[ií]s)\b",
+            text_clean,
+        ):
+            return True
+
+        return False

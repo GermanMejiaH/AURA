@@ -169,45 +169,44 @@ class SoundDeviceOutputProvider(AudioOutputProvider):
         return played
 
     def _play_mp3_bytes(self, audio_bytes: bytes, suffix: str = ".mp3") -> bool:
+        import sys
+        import time
+
         tmp_path = ""
         try:
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
 
-            ps_script = (
-                "Add-Type -AssemblyName presentationCore ; "
-                f"$m=New-Object System.Windows.Media.MediaPlayer ; "
-                f"$m.Open([uri]'{tmp_path}') ; "
-                f"$m.Play() ; "
-                "$w=0 ; "
-                "while (-not $m.NaturalDuration.HasTimeSpan -and $w -lt 40) { "
-                "  Start-Sleep -m 100 ; $w++ "
-                "} ; "
-                "if ($m.NaturalDuration.HasTimeSpan) { "
-                "  $ms = [int]$m.NaturalDuration.TimeSpan.TotalMilliseconds ; "
-                "  Start-Sleep -m ($ms + 300) "
-                "} else { "
-                "  Start-Sleep -s 5 "
-                "} ; "
-                "$m.Close()"
-            )
+            if sys.platform == "win32":
+                import ctypes
 
-            with self._lock:
-                self._process = subprocess.Popen(
-                    ["powershell", "-c", ps_script],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                winmm = ctypes.windll.winmm
+                alias = f"mp3_{abs(hash(tmp_path)) % 1000000}"
+                # Open
+                winmm.mciSendStringW(f'open "{tmp_path}" type mpegvideo alias {alias}', None, 0, 0)
+                # Get length in ms
+                buf = ctypes.create_unicode_buffer(128)
+                winmm.mciSendStringW(f"status {alias} length", buf, 128, 0)
+                ms = int(buf.value) if buf.value and buf.value.isdigit() else 0
 
-            if self._process is not None:
-                self._process.wait()
+                # Play
+                winmm.mciSendStringW(f"play {alias}", None, 0, 0)
+                if ms > 0:
+                    time.sleep(ms / 1000.0)
+                else:
+                    time.sleep(1.5)
 
-            played = True
+                winmm.mciSendStringW(f"close {alias}", None, 0, 0)
+                played = True
+            else:
+                played = self._play_powershell(tmp_path)
         except Exception as exc:
             logger = get_logger("SoundDeviceOutputProvider")
-            logger.warning(f"Fallback audio playback failed: {exc}")
-            played = False
+            logger.warning(
+                f"Audio playback via winmm failed ({exc}), attempting powershell fallback."
+            )
+            played = self._play_powershell(tmp_path)
         finally:
             with self._lock:
                 self._process = None
@@ -217,3 +216,38 @@ class SoundDeviceOutputProvider(AudioOutputProvider):
                 except Exception:
                     pass
         return played
+
+    def _play_powershell(self, tmp_path: str) -> bool:
+        if not tmp_path or not os.path.exists(tmp_path):
+            return False
+        ps_script = (
+            "Add-Type -AssemblyName presentationCore ; "
+            f"$m=New-Object System.Windows.Media.MediaPlayer ; "
+            f"$m.Open([uri]'{tmp_path}') ; "
+            f"$m.Play() ; "
+            "$w=0 ; "
+            "while (-not $m.NaturalDuration.HasTimeSpan -and $w -lt 40) { "
+            "  Start-Sleep -m 100 ; $w++ "
+            "} ; "
+            "if ($m.NaturalDuration.HasTimeSpan) { "
+            "  $ms = [int]$m.NaturalDuration.TimeSpan.TotalMilliseconds ; "
+            "  Start-Sleep -m ($ms + 300) "
+            "} else { "
+            "  Start-Sleep -s 5 "
+            "} ; "
+            "$m.Close()"
+        )
+
+        try:
+            with self._lock:
+                self._process = subprocess.Popen(
+                    ["powershell", "-c", ps_script],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+            if self._process is not None:
+                self._process.wait()
+        except Exception:
+            return False
+        return True

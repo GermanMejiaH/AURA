@@ -87,6 +87,8 @@ class CognitiveContextBuilder:
         "Eres AURA (Adaptive Unified Reasoning Assistant), un asistente cognitivo inteligente y "
         "autónomo. Respondes siempre en español de forma natural, concisa y directa por voz "
         "(máximo 1 a 3 oraciones breves). "
+        "Si el usuario realiza una interacción casual (como 'Gracias' o 'Hola'), responde "
+        "de forma cálida, amigable y muy breve (1 oración directa), sin discursos de plantilla. "
         "REGLA DE MEMORIA: Si el usuario pregunta sobre datos personales, gustos o hechos "
         "pasados y la respuesta está presente en 'RECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO', "
         "DEBES responder utilizando explícitamente dicha información. "
@@ -147,17 +149,20 @@ class CognitiveContextBuilder:
             except Exception:
                 pass
 
-            # Pull Memory facts/preferences if available
+            # Pull Memory facts/preferences if available and intent requires it
             try:
                 from ..memory import MemoryModule
+                from .intent import IntentDetector
 
-                if self.container.has(MemoryModule):
-                    mem = self.container.resolve(MemoryModule)
-                    retrieval = mem.retrieval.query(input_text)
-                    relevant_memories = [
-                        f"[{f.predicate} del {f.subject}]: {f.object_val}"
-                        for f in retrieval.facts
-                    ] + [f"[{p.key}]: {p.value}" for p in retrieval.preferences]
+                detected_intent = IntentDetector.detect(input_text)
+                if IntentDetector.should_query_persistent_memory(detected_intent, input_text):
+                    if self.container.has(MemoryModule):
+                        mem = self.container.resolve(MemoryModule)
+                        retrieval = mem.retrieval.query(input_text)
+                        relevant_memories = [
+                            f"[{f.predicate} del {f.subject}]: {f.object_val}"
+                            for f in retrieval.facts
+                        ] + [f"[{p.key}]: {p.value}" for p in retrieval.preferences]
             except Exception:
                 pass
 

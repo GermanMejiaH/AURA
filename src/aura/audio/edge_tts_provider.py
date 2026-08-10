@@ -94,44 +94,7 @@ class EdgeTTSProvider(TTSProvider):
 
     def _play_fallback(self, audio_bytes: bytes) -> None:
         """Saves MP3 to temp file and plays completely for its exact duration."""
-        import os
-        import tempfile
+        from .output import SoundDeviceOutputProvider
 
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-
-        ps_script = (
-            "Add-Type -AssemblyName presentationCore ; "
-            f"$m=New-Object System.Windows.Media.MediaPlayer ; "
-            f"$m.Open([uri]'{tmp_path}') ; "
-            f"$m.Play() ; "
-            "$w=0 ; "
-            "while (-not $m.NaturalDuration.HasTimeSpan -and $w -lt 40) { "
-            "  Start-Sleep -m 100 ; $w++ "
-            "} ; "
-            "if ($m.NaturalDuration.HasTimeSpan) { "
-            "  $ms = [int]$m.NaturalDuration.TimeSpan.TotalMilliseconds ; "
-            "  Start-Sleep -m ($ms + 300) "
-            "} else { "
-            "  Start-Sleep -s 120 "
-            "} ; "
-            "$m.Close()"
-        )
-
-        try:
-            self._current_process = subprocess.Popen(
-                ["powershell", "-c", ps_script],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self._current_process.wait()
-        except Exception:
-            pass
-        finally:
-            self._current_process = None
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
+        player = SoundDeviceOutputProvider()
+        player.play(audio_bytes)
