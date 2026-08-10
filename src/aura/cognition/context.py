@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .conversation_context import ConversationContext
 from .working_memory import WorkingMemory
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ class CognitiveContext:
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     identity: AURAIdentity | None = None
     session_context: SessionContext | None = None
+    conversation_context: ConversationContext | None = None
 
     def to_system_prompt(self) -> str:
         """Formats identity, background context, memory, tools, and results into prompt."""
@@ -45,10 +47,28 @@ class CognitiveContext:
                 sess_info.append(f"Tema: {self.session_context.current_topic}")
             if self.session_context.active_task:
                 sess_info.append(f"Tarea: {self.session_context.active_task}")
+            if self.session_context.task_detail:
+                sess_info.append(f"Detalle Tarea: {self.session_context.task_detail}")
+            if self.session_context.active_entity:
+                sess_info.append(f"Entidad Activa: {self.session_context.active_entity}")
             if self.session_context.last_intent:
                 sess_info.append(f"Intención reciente: {self.session_context.last_intent}")
             if sess_info:
                 parts.append(f"[ESTADO CONTEXTUAL DE SESIÓN]: {', '.join(sess_info)}")
+
+        if self.conversation_context is not None:
+            anaphora = self.conversation_context.anaphora_resolution
+            if anaphora and anaphora.requires_reference:
+                if anaphora.is_ambiguous:
+                    parts.append("[REFERENCIA ACTIVA]: AMBIGUA — SE REQUIERE ACLARACIÓN")
+                elif anaphora.resolved_entity:
+                    parts.append(f"[REFERENCIA ACTIVA]: {anaphora.resolved_entity}")
+
+            if self.conversation_context.relevant_turns:
+                parts.append("\n[CONTEXTO CONVERSACIONAL RELEVANTE]:")
+                for turn in self.conversation_context.relevant_turns:
+                    role = "Usuario" if turn.get("role") == "user" else "AURA"
+                    parts.append(f"  [{role}]: {turn.get('content', '')}")
 
         if self.available_tools:
             names = [f"'{t.get('name')}'" for t in self.available_tools if t.get("name")]
@@ -85,9 +105,15 @@ class CognitiveContext:
         """Formats conversational history and current input for LLM prompt."""
         parts: list[str] = []
 
-        if self.conversation_history:
+        history_source = (
+            self.conversation_context.relevant_turns
+            if (self.conversation_context and self.conversation_context.relevant_turns)
+            else self.conversation_history
+        )
+
+        if history_source:
             parts.append("Historial conversacional reciente:")
-            for turn in self.conversation_history[-12:]:
+            for turn in history_source[-12:]:
                 role = "Usuario" if turn.get("role") == "user" else "AURA"
                 parts.append(f"  [{role}]: {turn.get('content', '')}")
             parts.append("")
@@ -120,6 +146,7 @@ class CognitiveContextBuilder:
         input_text: str,
         system_instruction: str = "",
         working_memory: WorkingMemory | None = None,
+        conversation_context: ConversationContext | None = None,
     ) -> CognitiveContext:
         instruction = system_instruction or self.DEFAULT_INSTRUCTION
 
@@ -204,4 +231,5 @@ class CognitiveContextBuilder:
             available_tools=available_tools,
             identity=identity_obj,
             session_context=session_obj,
+            conversation_context=conversation_context,
         )

@@ -163,10 +163,52 @@ class CognitionModule(BaseModule):
             if self._config is not None
             else default_identity
         )
+
+        # 2.0 Build Conversation Context (Step 4: Anaphora resolution & Smart filtering)
+        from .conversation_context import (
+            AnaphoraResolver,
+            ConversationContext,
+            ConversationContextFilter,
+        )
+
+        history_turns = self.working_memory.get_recent_conversation(limit=12)
+        sess_ctx = self.session_manager.get_context()
+
+        recent_entities: list[str] = []
+        if sess_ctx.active_entity:
+            recent_entities.append(sess_ctx.active_entity)
+
+        anaphora_res = AnaphoraResolver.analyze(
+            user_input=input_text,
+            recent_entities=recent_entities,
+            active_topic=sess_ctx.current_topic,
+            active_entity=sess_ctx.active_entity,
+        )
+
+        relevant_turns = ConversationContextFilter.filter_turns(
+            history=history_turns,
+            current_topic=sess_ctx.current_topic,
+            active_task=sess_ctx.active_task,
+            task_detail=sess_ctx.task_detail,
+            active_entity=sess_ctx.active_entity,
+            anaphora_resolution=anaphora_res,
+            max_turns=8,
+        )
+
+        conv_ctx = ConversationContext(
+            active_topic=sess_ctx.current_topic,
+            active_task=sess_ctx.active_task,
+            task_detail=sess_ctx.task_detail,
+            active_entity=sess_ctx.active_entity,
+            relevant_turns=relevant_turns,
+            anaphora_resolution=anaphora_res,
+        )
+
         cognitive_context = self.context_builder.build(
             input_text=input_text,
             system_instruction=system_identity,
             working_memory=self.working_memory,
+            conversation_context=conv_ctx,
         )
         t_context_build = time.perf_counter() - t0
 

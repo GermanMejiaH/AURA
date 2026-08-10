@@ -1,6 +1,12 @@
 from .action_coordinator import ActionCoordinator, ActionResult
 from .attention import AttentionItem, AttentionLevel, AttentionManager
 from .context import CognitiveContext, CognitiveContextBuilder
+from .conversation_context import (
+    AnaphoraResolution,
+    AnaphoraResolver,
+    ConversationContext,
+    ConversationContextFilter,
+)
 from .decision import Decision, DecisionEngine, Intent
 from .factory import create_llm_provider
 from .gemini_provider import GeminiLLMProvider
@@ -22,6 +28,8 @@ __all__ = [
     "AURAIdentity",
     "ActionCoordinator",
     "ActionResult",
+    "AnaphoraResolution",
+    "AnaphoraResolver",
     "AttentionItem",
     "AttentionLevel",
     "AttentionManager",
@@ -30,6 +38,8 @@ __all__ = [
     "CognitiveContextBuilder",
     "CognitiveState",
     "CognitiveStateMachine",
+    "ConversationContext",
+    "ConversationContextFilter",
     "Decision",
     "DecisionEngine",
     "DetectedIntent",

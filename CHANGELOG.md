@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## [0.9.0] - 2026-08-10
+
+### Added - Context-Aware Cognition & Conversational Continuity
+- **Conversation Context Layer**: Introduced `ConversationContext` to manage multi-turn conversational state, active topic, active task, task details, active entity, and resolved anaphora.
+- **Deterministic Anaphora Resolver**: Added `AnaphoraResolver` to conservatively analyze anaphoric references (`"cuál"`, `"esa"`, `"la"`, `"él"`) without guessing. Emits explicit `is_ambiguous = True` when multiple candidates exist, prompting AURA to ask for clarification.
+- **Deterministic Context Filtering**: Implemented `ConversationContextFilter` to score and extract at most 8 relevant turns per cognitive cycle while strictly maintaining original chronological order.
+- **Session State Expansion**: Extended `SessionContext` with `task_detail` and `active_entity` fields, plus helper methods for topic and task management.
+- **Cognitive Context Integration**: Integrated `ConversationContext` into `CognitiveContext` and `CognitiveContextBuilder.to_system_prompt()`, formatting `[REFERENCIA ACTIVA]` and `[CONTEXTO CONVERSACIONAL RELEVANTE]` blocks without artificial empty sections.
+- **Preserved Architectural Integrity**: Maintained full compatibility with AURA 0.8 Tool Orchestration, SQLite persistent memory, and CWM.
+
+### Maintained & Verified
+- 100% backward compatibility with AURA 0.1 – 0.8.
+- 254/254 automated tests passing cleanly.
+- 0 Ruff lint errors and 0 Mypy type errors.
+
 ## [0.8.0] - 2026-08-10
 
 ### Added - Tool Use & Action Orchestration

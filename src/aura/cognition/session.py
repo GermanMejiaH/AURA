@@ -22,6 +22,8 @@ class SessionContext:
     session_id: str = field(default_factory=lambda: f"sess_{uuid.uuid4().hex[:8]}")
     current_topic: str | None = None
     active_task: str | None = None
+    task_detail: str | None = None
+    active_entity: str | None = None
     last_intent: str | None = None
     turn_count: int = 0
     start_time: datetime = field(default_factory=_utcnow)
@@ -42,6 +44,8 @@ class SessionManager:
                 session_id=self._context.session_id,
                 current_topic=self._context.current_topic,
                 active_task=self._context.active_task,
+                task_detail=self._context.task_detail,
+                active_entity=self._context.active_entity,
                 last_intent=self._context.last_intent,
                 turn_count=self._context.turn_count,
                 start_time=self._context.start_time,
@@ -86,9 +90,32 @@ class SessionManager:
         with self._lock:
             self._context.current_topic = topic
 
-    def set_task(self, task: str | None) -> None:
+    def clear_topic(self) -> None:
+        with self._lock:
+            self._context.current_topic = None
+
+    def set_task(self, task: str | None, detail: str | None = None) -> None:
         with self._lock:
             self._context.active_task = task
+            if detail is not None:
+                self._context.task_detail = detail
+
+    def set_task_detail(self, detail: str | None) -> None:
+        with self._lock:
+            self._context.task_detail = detail
+
+    def clear_task(self) -> None:
+        with self._lock:
+            self._context.active_task = None
+            self._context.task_detail = None
+
+    def set_active_entity(self, entity: str | None) -> None:
+        with self._lock:
+            self._context.active_entity = entity
+
+    def clear_active_entity(self) -> None:
+        with self._lock:
+            self._context.active_entity = None
 
     def reset_session(self) -> SessionContext:
         with self._lock:
