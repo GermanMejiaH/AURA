@@ -46,6 +46,8 @@ class AgentPlan:
     goal: AgentGoal
     plan_id: str = field(default_factory=lambda: f"plan_{uuid.uuid4().hex[:8]}")
     tasks: list[AgentTask] = field(default_factory=list)
+    replan_count: int = 0
+    max_replans: int = 2
 
     def get_ordered_tasks(self) -> list[AgentTask]:
         """Returns tasks sorted deterministically by their execution order."""

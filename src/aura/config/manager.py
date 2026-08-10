@@ -128,7 +128,7 @@ class ConfigurationManager:
             return value
         try:
             return expected_type(value)  # type: ignore[call-arg]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
 
     def set(self, key: str, value: Any, source: str = "runtime") -> None:

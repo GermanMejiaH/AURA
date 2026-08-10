@@ -342,9 +342,7 @@ def _handle_listen(aura: AURA, arg: str) -> None:
     audio_bytes = recorder.record_bytes(duration_sec=duration)
 
     print("   Audio capturado. Procesando transcripción con Faster Whisper...")
-    stt = FasterWhisperSTTProvider(
-        model_size_or_path="tiny", device="cpu"
-    )
+    stt = FasterWhisperSTTProvider(model_size_or_path="tiny", device="cpu")
     result = stt.transcribe(audio_bytes, language="es")
 
     if result.text:
@@ -412,9 +410,7 @@ def _handle_converse(aura: AURA, arg: str) -> None:
         except ValueError:
             pass
 
-    stt = FasterWhisperSTTProvider(
-        model_size_or_path="base", device="cpu"
-    )
+    stt = FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
     tts = EdgeTTSProvider(voice="es-aura")
 
     aura.config.load_from_env()
@@ -522,9 +518,7 @@ def _handle_auto(aura: AURA) -> None:
     else:
         llm = OpenAILLMProvider()
 
-    stt = FasterWhisperSTTProvider(
-        model_size_or_path="base", device="cpu"
-    )
+    stt = FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
     tts = EdgeTTSProvider(voice="es-aura")
 
     agent = AutonomousVoiceAgent(
@@ -699,7 +693,7 @@ def run_voice_cli() -> int:
             print("  -------------------")
             print(f"  • Total:      {m.total_sec:.2f}s")
 
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt, EOFError:
         print("\nInterrupción detectada. Apagando AURA...")
     finally:
         aura.shutdown(wait=True)

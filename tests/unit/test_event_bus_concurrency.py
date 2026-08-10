@@ -27,10 +27,7 @@ def test_event_bus_concurrent_publish_and_subscribe():
             bus.publish(CustomTestEvent(payload={"count": start_idx + i}))
             time.sleep(0.001)
 
-    threads = [
-        threading.Thread(target=worker, args=(100 * t,))
-        for t in range(5)
-    ]
+    threads = [threading.Thread(target=worker, args=(100 * t,)) for t in range(5)]
     for t in threads:
         t.start()
     for t in threads:

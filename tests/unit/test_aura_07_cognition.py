@@ -21,17 +21,13 @@ def test_intent_aware_memory_retrieval_decision() -> None:
 
     mem_query = IntentDetector.detect("¿Cuál es mi comida favorita?")
     assert (
-        IntentDetector.should_query_persistent_memory(
-            mem_query, "¿Cuál es mi comida favorita?"
-        )
+        IntentDetector.should_query_persistent_memory(mem_query, "¿Cuál es mi comida favorita?")
         is True
     )
 
     question_personal = IntentDetector.detect("¿Dónde vive mi perro?")
     assert (
-        IntentDetector.should_query_persistent_memory(
-            question_personal, "¿Dónde vive mi perro?"
-        )
+        IntentDetector.should_query_persistent_memory(question_personal, "¿Dónde vive mi perro?")
         is True
     )
 

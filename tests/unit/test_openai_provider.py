@@ -25,7 +25,9 @@ def test_openai_provider_structured_reason():
     provider = OpenAILLMProvider(api_key="fake_key")
 
     mock_resp = MagicMock()
-    mock_resp.choices[0].message.content = (
+    mock_resp.choices[
+        0
+    ].message.content = (
         '{"intent": "greet", "reasoning": "User said hi", "confidence": 0.98, "actions": []}'
     )
     mock_resp.usage.total_tokens = 22

@@ -136,7 +136,7 @@ class DependencyContainer:
 
         try:
             sig = inspect.signature(cls.__init__)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return cls()
 
         kwargs: dict[str, Any] = {}
@@ -155,10 +155,9 @@ class DependencyContainer:
                 matched = annotation
             else:
                 for target_cls in self._services:
-                    name_match = (
-                        target_cls.__name__ == str(annotation)
-                        or target_cls.__name__ in str(annotation)
-                    )
+                    name_match = target_cls.__name__ == str(
+                        annotation
+                    ) or target_cls.__name__ in str(annotation)
                     if name_match:
                         matched = target_cls
                         break

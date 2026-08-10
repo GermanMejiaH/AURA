@@ -25,9 +25,7 @@ def test_greeting_skips_persistent_memory_retrieval(tmp_path: Path) -> None:
     mem.preferences.set_preference("comida_favorita", "pasta")
 
     # Cycle 1: Greeting
-    ctx_greeting = cog.context_builder.build(
-        "Hola AURA", working_memory=cog.working_memory
-    )
+    ctx_greeting = cog.context_builder.build("Hola AURA", working_memory=cog.working_memory)
     # Greeting context must NOT contain relevant persistent memories list
     assert len(ctx_greeting.relevant_memories) == 0
 
@@ -55,14 +53,10 @@ def test_anaphoric_pet_reference_and_coexistence(tmp_path: Path) -> None:
     assert cog is not None
 
     # Turn 1: Memory Update
-    cog.process_cognitive_cycle(
-        "Recuerda que mi perra se llama Lila."
-    )
+    cog.process_cognitive_cycle("Recuerda que mi perra se llama Lila.")
 
     # Turn 2: Memory Query with personal indicator
-    ctx2 = cog.context_builder.build(
-        "¿Cómo se llama mi perra?", working_memory=cog.working_memory
-    )
+    ctx2 = cog.context_builder.build("¿Cómo se llama mi perra?", working_memory=cog.working_memory)
     sys_prompt = ctx2.to_system_prompt()
 
     assert "lila" in sys_prompt.lower() or "perra" in sys_prompt.lower()

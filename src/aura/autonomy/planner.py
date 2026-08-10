@@ -4,6 +4,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
+from ..events import AgentPlanCreated, AgentSecurityAlert, EventBus
 from ..logging import get_logger
 from .agent_models import AgentGoal, AgentPlan, AgentTask, TaskStatus
 
@@ -22,10 +23,12 @@ class AgentPlanner:
         llm_provider: LLMProvider | None = None,
         registry: ToolRegistry | None = None,
         max_plan_steps: int = DEFAULT_MAX_PLAN_STEPS,
+        event_bus: EventBus | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.registry = registry
         self.max_plan_steps = max_plan_steps
+        self.event_bus = event_bus
 
     def create_plan(
         self,
@@ -140,7 +143,7 @@ class AgentPlanner:
             if not isinstance(order_val, int):
                 try:
                     order_val = int(order_val)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     order_val = idx
 
             tool_name = task_item.get("tool_name")
@@ -155,7 +158,17 @@ class AgentPlanner:
                 raise TypeError(f"Task '{task_desc}' parameters must be a dictionary")
 
             # Security Enforcement: Strip any '_authorized' parameter injected by LLM
-            parameters.pop("_authorized", None)
+            if "_authorized" in parameters:
+                parameters.pop("_authorized", None)
+                if self.event_bus is not None:
+                    self.event_bus.publish(
+                        AgentSecurityAlert(
+                            source="AgentPlanner",
+                            event_type="unauthorized_attempt",
+                            tool_name=tool_name or "",
+                            reason="Stripped _authorized parameter from LLM proposal",
+                        )
+                    )
 
             # Tool and parameter schema validation against ToolRegistry
             if tool_name:
@@ -168,6 +181,15 @@ class AgentPlanner:
 
                 tool_obj = self.registry.get(tool_name)
                 if tool_obj is None:
+                    if self.event_bus is not None:
+                        self.event_bus.publish(
+                            AgentSecurityAlert(
+                                source="AgentPlanner",
+                                event_type="invalid_tool",
+                                tool_name=tool_name,
+                                reason=f"Tool '{tool_name}' not registered",
+                            )
+                        )
                     msg = (
                         f"Tool '{tool_name}' specified in task '{task_desc}' "
                         "is not registered in ToolRegistry"
@@ -176,12 +198,20 @@ class AgentPlanner:
 
                 valid, val_err = self.registry.validate_parameters(tool_name, **parameters)
                 if not valid:
+                    if self.event_bus is not None:
+                        self.event_bus.publish(
+                            AgentSecurityAlert(
+                                source="AgentPlanner",
+                                event_type="invalid_parameter",
+                                tool_name=tool_name,
+                                reason=val_err or "Invalid parameters schema",
+                            )
+                        )
                     msg = (
                         f"Invalid parameters for tool '{tool_name}' "
                         f"in task '{task_desc}': {val_err}"
                     )
                     raise ValueError(msg)
-
 
             custom_task_id = task_item.get("task_id")
             if custom_task_id and isinstance(custom_task_id, str):
@@ -209,19 +239,28 @@ class AgentPlanner:
 
         plan = AgentPlan(goal=target_goal, tasks=created_tasks)
         logger.info(f"AgentPlan successfully created with {len(plan.tasks)} tasks.")
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                AgentPlanCreated(
+                    source="AgentPlanner",
+                    plan_id=plan.plan_id,
+                    goal_description=plan.goal.description,
+                    tasks_count=len(plan.tasks),
+                )
+            )
+
         return plan
 
     @staticmethod
     def _parse_json_response(content: str) -> dict[str, Any]:
         """Extracts and parses JSON dictionary from LLM response text cleanly."""
         cleaned = content.strip()
-        # Remove markdown code blocks if present
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
             cleaned = re.sub(r"\s*```$", "", cleaned)
             cleaned = cleaned.strip()
 
-        # Extract first JSON block { ... } if text surrounds it
         json_match = re.search(r"(\{.*\})", cleaned, re.DOTALL)
         if json_match:
             cleaned = json_match.group(1)

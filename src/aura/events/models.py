@@ -488,6 +488,7 @@ class SessionContextUpdated(Event):
 @dataclass(frozen=True)
 class AgentStepEvaluated(Event):
     task_id: str = ""
+    plan_id: str = ""
     evaluation_status: str = "SUCCESS"
     reason: str = ""
     __event_name__: ClassVar[str] = "AgentStepEvaluated"
@@ -508,3 +509,59 @@ class AgentConfirmationDenied(Event):
     tool_name: str = ""
     reason: str = ""
     __event_name__: ClassVar[str] = "AgentConfirmationDenied"
+
+
+@dataclass(frozen=True)
+class AgentReplanRequested(Event):
+    plan_id: str = ""
+    task_id: str = ""
+    replan_count: int = 0
+    reason: str = ""
+    __event_name__: ClassVar[str] = "AgentReplanRequested"
+
+
+@dataclass(frozen=True)
+class AgentReplanned(Event):
+    plan_id: str = ""
+    task_id: str = ""
+    replan_count: int = 0
+    new_tasks_count: int = 0
+    __event_name__: ClassVar[str] = "AgentReplanned"
+
+
+@dataclass(frozen=True)
+class AgentReplanFailed(Event):
+    plan_id: str = ""
+    task_id: str = ""
+    replan_count: int = 0
+    reason: str = ""
+    __event_name__: ClassVar[str] = "AgentReplanFailed"
+
+
+@dataclass(frozen=True)
+class AgentPlanCreated(Event):
+    plan_id: str = ""
+    goal_description: str = ""
+    tasks_count: int = 0
+    __event_name__: ClassVar[str] = "AgentPlanCreated"
+
+
+@dataclass(frozen=True)
+class AgentPlanCompleted(Event):
+    plan_id: str = ""
+    completed: bool = True
+    failed: bool = False
+    waiting_confirmation: bool = False
+    steps_executed: int = 0
+    duration_ms: float = 0.0
+    __event_name__: ClassVar[str] = "AgentPlanCompleted"
+
+
+@dataclass(frozen=True)
+class AgentSecurityAlert(Event):
+    event_type: str = "security_alert"
+    tool_name: str = ""
+    reason: str = ""
+    plan_id: str = ""
+    task_id: str = ""
+    __event_name__: ClassVar[str] = "AgentSecurityAlert"

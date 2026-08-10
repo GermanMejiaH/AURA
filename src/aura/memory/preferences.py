@@ -50,8 +50,7 @@ class UserPreferencesMemory:
             obsolete_alias_keys = [
                 existing_key
                 for existing_key in list(self._preferences.keys())
-                if existing_key != canon_key
-                and canonicalize_key(existing_key) == canon_key
+                if existing_key != canon_key and canonicalize_key(existing_key) == canon_key
             ]
 
             for alias_k in obsolete_alias_keys:

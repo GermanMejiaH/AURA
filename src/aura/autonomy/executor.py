@@ -7,6 +7,10 @@ from ..cognition.evaluator import EvaluationStatus, TaskEvaluator
 from ..events import (
     AgentConfirmationDenied,
     AgentConfirmationGranted,
+    AgentPlanCompleted,
+    AgentReplanFailed,
+    AgentReplanned,
+    AgentReplanRequested,
     AgentStepEvaluated,
     EventBus,
     ToolConfirmationRequired,
@@ -19,7 +23,9 @@ from .agent_models import AgentPlan, AgentTask, TaskStatus
 from .observation import Observation
 
 if TYPE_CHECKING:
+    from ..memory.plan_store import AgentPlanStore
     from ..tools.registry import ToolRegistry
+    from .replanner import AgentReplanner
 
 
 @dataclass
@@ -45,11 +51,15 @@ class AgentExecutor:
         event_bus: EventBus | None = None,
         registry: ToolRegistry | None = None,
         evaluator: TaskEvaluator | None = None,
+        replanner: AgentReplanner | None = None,
+        plan_store: AgentPlanStore | None = None,
     ) -> None:
         self.max_agent_steps = max_agent_steps
         self.event_bus = event_bus
         self.registry = registry
         self.evaluator = evaluator or TaskEvaluator()
+        self.replanner = replanner
+        self.plan_store = plan_store
 
     def authorize_task(self, plan: AgentPlan, task_id: str) -> bool:
         """Authorizes a single task in WAITING_CONFIRMATION state to allow execution."""
@@ -201,6 +211,7 @@ class AgentExecutor:
                         AgentStepEvaluated(
                             source="AgentExecutor",
                             task_id=task.task_id,
+                            plan_id=plan.plan_id,
                             evaluation_status=eval_res.status.value,
                             reason=eval_res.reason,
                         )
@@ -218,6 +229,63 @@ class AgentExecutor:
                                 execution_time_ms=tool_result.execution_time_ms,
                             )
                         )
+
+                elif eval_res.status == EvaluationStatus.REPLAN_REQUIRED:
+                    if self.event_bus is not None:
+                        self.event_bus.publish(
+                            AgentReplanRequested(
+                                source="AgentExecutor",
+                                plan_id=plan.plan_id,
+                                task_id=task.task_id,
+                                replan_count=plan.replan_count,
+                                reason=eval_res.reason,
+                            )
+                        )
+
+                    replan_ok = False
+                    if self.replanner is not None:
+                        replan_ok = self.replanner.replan(
+                            plan=plan,
+                            failed_task=task,
+                            observation=obs,
+                            eval_result=eval_res,
+                            registry=active_registry,
+                        )
+
+                    if replan_ok:
+                        if self.event_bus is not None:
+                            self.event_bus.publish(
+                                AgentReplanned(
+                                    source="AgentExecutor",
+                                    plan_id=plan.plan_id,
+                                    task_id=task.task_id,
+                                    replan_count=plan.replan_count,
+                                    new_tasks_count=len(plan.tasks),
+                                )
+                            )
+                        if self.plan_store is not None:
+                            self.plan_store.update_plan(plan)
+                        continue
+                    else:
+                        if self.event_bus is not None:
+                            self.event_bus.publish(
+                                AgentReplanFailed(
+                                    source="AgentExecutor",
+                                    plan_id=plan.plan_id,
+                                    task_id=task.task_id,
+                                    replan_count=plan.replan_count,
+                                    reason=f"Replanning failed: {eval_res.reason}",
+                                )
+                            )
+                        task.status = TaskStatus.FAILED
+                        task.error = (
+                            f"Task execution failed and replanning was unsuccessful: "
+                            f"{eval_res.reason}"
+                        )
+                        result.failed = True
+                        if self.plan_store is not None:
+                            self.plan_store.update_plan(plan)
+                        break
                 else:
                     task.status = TaskStatus.FAILED
                     task.error = eval_res.reason
@@ -248,5 +316,21 @@ class AgentExecutor:
         result.completed = plan.is_completed()
         result.failed = plan.is_failed()
         result.waiting_confirmation = plan.is_waiting_confirmation()
+
+        if self.plan_store is not None:
+            self.plan_store.update_plan(plan)
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                AgentPlanCompleted(
+                    source="AgentExecutor",
+                    plan_id=plan.plan_id,
+                    completed=result.completed,
+                    failed=result.failed,
+                    waiting_confirmation=result.waiting_confirmation,
+                    steps_executed=result.steps_executed,
+                    duration_ms=0.0,
+                )
+            )
 
         return result

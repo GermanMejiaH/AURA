@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import time
 
+from ..autonomy.agent_models import TaskStatus
+from ..autonomy.planner import AgentPlanner
 from ..config import ConfigurationManager
 from ..container import DependencyContainer
 from ..events import EventBus
 from ..logging import get_logger
+from ..memory import AgentPlanStore
 from ..modules.base import BaseModule
+from ..tools.registry import ToolRegistry
 from ..world import CognitiveWorldModel
 from .action_coordinator import ActionCoordinator
 from .attention import AttentionManager
@@ -14,7 +18,7 @@ from .context import CognitiveContextBuilder
 from .decision import DecisionEngine
 from .factory import create_llm_provider
 from .identity import IdentityManager
-from .intent import IntentDetector
+from .intent import Intent, IntentDetector, IntentType
 from .planner import Planner
 from .provider import LLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
@@ -37,6 +41,7 @@ class CognitionModule(BaseModule):
         event_bus: EventBus | None = None,
         state_machine: CognitiveStateMachine | None = None,
         llm_provider: LLMProvider | None = None,
+        plan_store: AgentPlanStore | None = None,
     ) -> None:
         super().__init__(config, container, event_bus)
         self.state_machine = (
@@ -62,6 +67,7 @@ class CognitionModule(BaseModule):
         self.planner = Planner()
         self.coordinator = ActionCoordinator(event_bus=event_bus)
         self.context_builder = CognitiveContextBuilder(container=container)
+        self.plan_store = plan_store if plan_store is not None else AgentPlanStore()
         from .tool_orchestrator import ToolOrchestrator
 
         self.tool_orchestrator = ToolOrchestrator(event_bus=event_bus)
@@ -83,6 +89,7 @@ class CognitionModule(BaseModule):
             self._container.register(DecisionEngine, instance=self.decision)
             self._container.register(Planner, instance=self.planner)
             self._container.register(ActionCoordinator, instance=self.coordinator)
+            self._container.register(AgentPlanStore, instance=self.plan_store)
             from .tool_orchestrator import ToolOrchestrator
 
             self._container.register(ToolOrchestrator, instance=self.tool_orchestrator)
@@ -99,8 +106,27 @@ class CognitionModule(BaseModule):
             f"llm={type(self.llm_provider).__name__}]"
         )
 
+    @staticmethod
+    def _is_agentic_request(input_text: str, intent: Intent) -> bool:
+        clean = input_text.strip().lower()
+        if clean.startswith(
+            (
+                "planifica",
+                "crea un plan",
+                "ejecuta el plan",
+                "organiza",
+                "busca y",
+                "analiza y",
+                "revisa y",
+            )
+        ):
+            return True
+        return intent.intent_type == IntentType.TASK_REQUEST and (
+            " y " in clean or "para " in clean or len(clean.split()) >= 5
+        )
+
     def process_cognitive_cycle(self, input_text: str, source: str = "user") -> ReasoningResult:
-        """Runs cognitive cycle: Attention -> Intent -> Session -> Memory -> Context -> Tools."""
+        """Runs cognitive cycle: Attention -> Intent -> Agentic -> Memory -> Context -> Tools."""
         logger = get_logger("CognitionModule")
         t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
@@ -126,6 +152,188 @@ class CognitionModule(BaseModule):
                 )
             )
 
+        # --- AURA 1.1 STAGE 3 AGENTIC ROUTING & PERSISTENT CONFIRMATION FLOW ---
+        from ..autonomy.executor import AgentExecutor
+
+        active_plans = self.plan_store.list_active_plans()
+        pending_plan = next((p for p in active_plans if p.is_waiting_confirmation()), None)
+
+        if pending_plan:
+            waiting_task = next(
+                (t for t in pending_plan.tasks if t.status == TaskStatus.WAITING_CONFIRMATION),
+                None,
+            )
+
+            # User Confirmation Flow
+            if detected_intent.intent_type == IntentType.CONFIRMATION:
+                if waiting_task:
+                    tool_reg = (
+                        self._container.resolve(ToolRegistry)
+                        if self._container and self._container.has(ToolRegistry)
+                        else None
+                    )
+                    from ..autonomy.replanner import AgentReplanner
+
+                    agent_replanner = AgentReplanner(llm_provider=self.llm_provider)
+                    executor = AgentExecutor(
+                        event_bus=self._event_bus,
+                        registry=tool_reg,
+                        replanner=agent_replanner,
+                        plan_store=self.plan_store,
+                    )
+                    executor.authorize_task(pending_plan, waiting_task.task_id)
+                    res = executor.resume_plan(pending_plan, registry=tool_reg)
+                    self.plan_store.update_plan(pending_plan)
+
+                    if res.waiting_confirmation:
+                        new_waiting = next(
+                            (
+                                t
+                                for t in pending_plan.tasks
+                                if t.status == TaskStatus.WAITING_CONFIRMATION
+                            ),
+                            None,
+                        )
+                        new_tool = new_waiting.tool_name if new_waiting else "herramienta"
+                        new_desc = new_waiting.description if new_waiting else ""
+                        summary = (
+                            f"Tarea '{waiting_task.description}' autorizada y ejecutada. "
+                            f"La siguiente tarea '{new_desc}' requiere confirmación para "
+                            f"usar '{new_tool}'. ¿Deseas autorizar esta acción?"
+                        )
+                        sess_ctx = self.session_manager.get_context()
+                        sess_ctx.active_task = "WAITING_FOR_CONFIRMATION"
+                    elif res.completed:
+                        summary = (
+                            f"Confirmación recibida. Plan completado con éxito: "
+                            f"{waiting_task.result or 'Ejecutado'}"
+                        )
+                    else:
+                        failed_t = next(
+                            (t for t in pending_plan.tasks if t.status == TaskStatus.FAILED),
+                            None,
+                        )
+                        err_msg = failed_t.error if failed_t else "Error en la ejecución."
+                        summary = f"Confirmación recibida, pero ocurrió un problema: {err_msg}"
+
+                    self.working_memory.add_conversation_turn("user", input_text)
+                    self.working_memory.add_conversation_turn("assistant", summary)
+                    self.session_manager.record_turn()
+                    self.state_machine.transition_to(
+                        CognitiveState.IDLE, reason="agent_resume_complete"
+                    )
+                    return ReasoningResult(
+                        summary=summary,
+                        intent="agent_resume",
+                        confidence=1.0,
+                    )
+
+            # User Cancellation Flow
+            if detected_intent.intent_type == IntentType.CANCELLATION:
+                if waiting_task:
+                    executor = AgentExecutor(event_bus=self._event_bus)
+                    executor.deny_task(
+                        pending_plan,
+                        waiting_task.task_id,
+                        reason="Cancelado por el usuario",
+                    )
+                    self.plan_store.update_plan(pending_plan)
+                    summary = f"Entendido, la tarea '{waiting_task.description}' ha sido cancelada."
+
+                    self.working_memory.add_conversation_turn("user", input_text)
+                    self.working_memory.add_conversation_turn("assistant", summary)
+                    self.session_manager.record_turn()
+                    self.state_machine.transition_to(
+                        CognitiveState.IDLE, reason="agent_cancel_complete"
+                    )
+                    return ReasoningResult(
+                        summary=summary,
+                        intent="agent_cancel",
+                        confidence=1.0,
+                    )
+
+        # Check for new Agentic Multi-Step Goal
+        if self._is_agentic_request(input_text, detected_intent):
+            tool_reg = (
+                self._container.resolve(ToolRegistry)
+                if self._container and self._container.has(ToolRegistry)
+                else None
+            )
+            agent_planner = AgentPlanner(llm_provider=self.llm_provider, registry=tool_reg)
+            from ..autonomy.replanner import AgentReplanner
+
+            agent_replanner = AgentReplanner(llm_provider=self.llm_provider)
+            try:
+                agent_plan = agent_planner.create_plan(input_text)
+                # PERSIST PLAN BEFORE EXECUTION
+                self.plan_store.save_plan(agent_plan)
+
+                # EXECUTE PLAN
+                executor = AgentExecutor(
+                    event_bus=self._event_bus,
+                    registry=tool_reg,
+                    replanner=agent_replanner,
+                    plan_store=self.plan_store,
+                )
+                self.state_machine.transition_to(
+                    CognitiveState.EXECUTING, reason="executing_agent_plan"
+                )
+                res = executor.execute_plan(agent_plan, registry=tool_reg)
+
+                # UPDATE PERSISTED PLAN STATE
+                self.plan_store.update_plan(agent_plan)
+
+                if res.waiting_confirmation:
+                    waiting_task = next(
+                        (
+                            t
+                            for t in agent_plan.tasks
+                            if t.status == TaskStatus.WAITING_CONFIRMATION
+                        ),
+                        None,
+                    )
+                    tool_name = waiting_task.tool_name if waiting_task else "accion"
+                    desc = waiting_task.description if waiting_task else ""
+                    summary = (
+                        f"Para realizar '{desc}', necesito tu confirmación para ejecutar "
+                        f"la herramienta '{tool_name}'. ¿Deseas autorizar esta acción?"
+                    )
+                    sess_ctx = self.session_manager.get_context()
+                    sess_ctx.active_task = "WAITING_FOR_CONFIRMATION"
+                elif res.completed:
+                    task_summaries = [
+                        f"- {t.description}: {t.result}" for t in agent_plan.tasks if t.result
+                    ]
+                    details = (
+                        "\n".join(task_summaries)
+                        if task_summaries
+                        else "Todas las tareas fueron completadas."
+                    )
+                    summary = f"Plan completado con éxito:\n{details}"
+                else:
+                    failed_task = next(
+                        (t for t in agent_plan.tasks if t.status == TaskStatus.FAILED), None
+                    )
+                    err_msg = failed_task.error if failed_task else "Error en la ejecución."
+                    summary = f"No fue posible completar el plan debido a un error: {err_msg}"
+
+                self.working_memory.add_conversation_turn("user", input_text)
+                self.working_memory.add_conversation_turn("assistant", summary)
+                self.session_manager.record_turn()
+                self.state_machine.transition_to(CognitiveState.IDLE, reason="agent_plan_complete")
+
+                return ReasoningResult(
+                    summary=summary,
+                    intent="agent_plan",
+                    confidence=1.0,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"AgentPlanner failed or non-agentic request: {exc}. "
+                    "Falling back to standard reactive cycle."
+                )
+
+        # --- STANDARD REACTIVE MONO-TURNO FLOW ---
         # 1. Attention evaluation & Memory Directive check
         att_item = self.attention.evaluate_event("UserRequest", {"text": input_text}, source=source)
         if att_item:
@@ -214,8 +422,6 @@ class CognitionModule(BaseModule):
 
         # 2.1 Tool Orchestration (Tool Use & Action Orchestration)
         if self._container is not None:
-            from ..tools.registry import ToolRegistry
-
             if self._container.has(ToolRegistry):
                 tool_reg = self._container.resolve(ToolRegistry)
                 tool_results = self.tool_orchestrator.orchestrate(

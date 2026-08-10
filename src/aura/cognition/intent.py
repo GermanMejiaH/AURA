@@ -55,25 +55,17 @@ class IntentDetector:
         r"\bhola,?\s*(?:aura|laura)\b",
     )
 
-    FAREWELL_PATTERNS = (
-        r"^(?:adi[oó]s|chao|hasta\s+luego|nos\s+vemos|salir|bye|chao)\b",
-    )
+    FAREWELL_PATTERNS = (r"^(?:adi[oó]s|chao|hasta\s+luego|nos\s+vemos|salir|bye|chao)\b",)
 
     CONFIRMATION_PATTERNS = (
         r"^(?:s[ií]|s[ií],\s+hazlo|claro|de\s+acuerdo|confirmar|acepto|de\s+una)\b",
     )
 
-    CANCELLATION_PATTERNS = (
-        r"^(?:cancela|cancelar|no,\s+cancela|detener|para|stop|abortar)\b",
-    )
+    CANCELLATION_PATTERNS = (r"^(?:cancela|cancelar|no,\s+cancela|detener|para|stop|abortar)\b",)
 
-    TASK_PATTERNS = (
-        r"^(?:busca|analiza|crea|organiza|programa|revisa|organizar)\b",
-    )
+    TASK_PATTERNS = (r"^(?:busca|analiza|crea|organiza|programa|revisa|organizar)\b",)
 
-    COMMAND_PATTERNS = (
-        r"^(?:apaga|enciende|mueve|ejecuta|navega|reproduce)\b",
-    )
+    COMMAND_PATTERNS = (r"^(?:apaga|enciende|mueve|ejecuta|navega|reproduce)\b",)
 
     TOPIC_PATTERNS = (
         r"\b(?:hablemos|hablando|sobre|de|pensando\s+en|interesa)\s+([a-zA-ZáéíóúñÁÉÍÓÚÑ]{3,20})\b",

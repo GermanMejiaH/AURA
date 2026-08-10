@@ -170,8 +170,7 @@ class BaseModule(ABC):
         pass
 
     @abstractmethod
-    def on_initialize(self) -> None:
-        ...
+    def on_initialize(self) -> None: ...
 
     def on_start(self) -> None:
         pass

@@ -47,9 +47,7 @@ class IdentityManager:
                 return
 
             name = self.config.get_typed("identity.name", str, "AURA")
-            mission = self.config.get_typed(
-                "identity.mission", str, self._identity.mission
-            )
+            mission = self.config.get_typed("identity.mission", str, self._identity.mission)
             personality = self.config.get_typed(
                 "identity.personality_style", str, self._identity.personality_style
             )
@@ -57,16 +55,12 @@ class IdentityManager:
 
             rules_raw = self.config.get("identity.behavior_rules", None)
             rules = (
-                list(rules_raw)
-                if isinstance(rules_raw, list)
-                else self._identity.behavior_rules
+                list(rules_raw) if isinstance(rules_raw, list) else self._identity.behavior_rules
             )
 
             limits_raw = self.config.get("identity.limitations", None)
             limits = (
-                list(limits_raw)
-                if isinstance(limits_raw, list)
-                else self._identity.limitations
+                list(limits_raw) if isinstance(limits_raw, list) else self._identity.limitations
             )
 
             self._identity = AURAIdentity(

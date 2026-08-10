@@ -1,8 +1,11 @@
 .env
 .venv/
 __pycache__/
+**/__pycache__/
 *.log
 *.wav
+*.db
+data/*.db
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/

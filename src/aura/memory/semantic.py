@@ -50,9 +50,8 @@ class SemanticMemory:
     @classmethod
     def is_single_valued(cls, predicate: str) -> bool:
         pred_clean = predicate.lower().strip()
-        return (
-            pred_clean in cls.SINGLE_VALUED_PREDICATES
-            or pred_clean.endswith(("_favorito", "_favorita"))
+        return pred_clean in cls.SINGLE_VALUED_PREDICATES or pred_clean.endswith(
+            ("_favorito", "_favorita")
         )
 
     def load_from_store(self) -> None:

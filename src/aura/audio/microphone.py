@@ -87,9 +87,7 @@ class MicrophoneRecorder:
 
                 # Stop recording only after speech started and trailing silence is reached
                 if speech_started and silent_chunks >= max_silent_chunks:
-                    self.silence_detector.process_silence_duration(
-                        silent_chunks * chunk_duration
-                    )
+                    self.silence_detector.process_silence_duration(silent_chunks * chunk_duration)
                     break
 
         if not speech_started or not frames:

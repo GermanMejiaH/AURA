@@ -142,10 +142,11 @@ AURA cuenta con una suite completa de pruebas unitarias, de integración y de si
 ```
 
 ### Métricas de Calidad
-- **Pruebas de Pytest**: `104 passed in 2.48s` (100% de éxito).
+- **Pruebas de Pytest**: `395 passed in ~10s` (100% de éxito).
 - **Ruff Linter**: `All checks passed!`
-- **MyPy**: `Success: no issues found in 74 source files`
+- **MyPy**: `Success: no issues found in 102 source files`
 - **Arranque del Core Engine**: `0.002s - 0.004s`
+
 
 ---
 

@@ -105,8 +105,7 @@ def test_case_4_active_task() -> None:
 def test_case_5_long_history_max_8_limit_and_chronology() -> None:
     # 14 turns
     history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": f"Turno {i}"}
-        for i in range(14)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": f"Turno {i}"} for i in range(14)
     ]
 
     filtered = ConversationContextFilter.filter_turns(

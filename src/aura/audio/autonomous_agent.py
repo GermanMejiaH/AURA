@@ -192,10 +192,7 @@ class AutonomousVoiceAgent:
         from datetime import datetime
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        prompt = (
-            f"Fecha y hora actual del sistema: {now_str}\n"
-            f"Entrada de voz del usuario: '{text}'"
-        )
+        prompt = f"Fecha y hora actual del sistema: {now_str}\nEntrada de voz del usuario: '{text}'"
 
         res = self.llm.generate_response(
             prompt=prompt,

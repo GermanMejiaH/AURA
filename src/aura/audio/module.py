@@ -46,12 +46,8 @@ class AudioModule(BaseModule):
         tts_provider: TTSProvider | None = None,
     ) -> None:
         super().__init__(config, container, event_bus)
-        self.audio_input = (
-            audio_input if audio_input is not None else MockAudioInputProvider()
-        )
-        self.audio_output = (
-            audio_output if audio_output is not None else MockAudioOutputProvider()
-        )
+        self.audio_input = audio_input if audio_input is not None else MockAudioInputProvider()
+        self.audio_output = audio_output if audio_output is not None else MockAudioOutputProvider()
         self.wakeword = (
             wakeword_detector if wakeword_detector is not None else MockWakeWordDetector()
         )

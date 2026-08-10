@@ -30,15 +30,9 @@ class MemoryModule(BaseModule):
     ) -> None:
         super().__init__(config, container, event_bus)
         db_path = (
-            config.get_typed("memory.db_path", str, "data/aura.db")
-            if config
-            else "data/aura.db"
+            config.get_typed("memory.db_path", str, "data/aura.db") if config else "data/aura.db"
         )
-        enabled = (
-            config.get_typed("memory.enabled", bool, True)
-            if config
-            else True
-        )
+        enabled = config.get_typed("memory.enabled", bool, True) if config else True
 
         self.store: MemoryStore | None = store
         if self.store is None and enabled:

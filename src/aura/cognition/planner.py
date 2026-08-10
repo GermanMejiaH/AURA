@@ -57,7 +57,7 @@ class Planner:
             for i, act in enumerate(suggested):
                 steps.append(
                     PlanStep(
-                        name=act.get("name", f"step_{i+1}"),
+                        name=act.get("name", f"step_{i + 1}"),
                         action_type=act.get("type", "execute"),
                         target=act.get("target", ""),
                         parameters=act.get("parameters", {}),

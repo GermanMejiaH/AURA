@@ -23,9 +23,7 @@ def test_identity_isolation_from_user_memory(tmp_path: Path) -> None:
     assert cog is not None and mem is not None
 
     # Change identity
-    cog.identity_manager.update_identity(
-        name="AURA Custom", personality_style="ultra formal"
-    )
+    cog.identity_manager.update_identity(name="AURA Custom", personality_style="ultra formal")
 
     # User preferences in SQLite must remain completely empty
     assert len(mem.preferences.all_preferences()) == 0

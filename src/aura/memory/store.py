@@ -5,7 +5,6 @@ import os
 import sqlite3
 import threading
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Any
 
 from ..logging import get_logger
@@ -13,43 +12,51 @@ from .models import Episode, Fact, Preference
 
 
 class MemoryStore(ABC):
-    """Abstract persistent storage engine interface for AURA long-term memory."""
+    """Abstract Base Class defining the contract for memory persistence backends."""
 
     @abstractmethod
-    def save_fact(self, fact: Fact) -> None: ...
+    def save_fact(self, fact: Fact) -> None:
+        pass
 
     @abstractmethod
-    def get_facts(
-        self, subject: str | None = None, predicate: str | None = None
-    ) -> list[Fact]: ...
+    def delete_fact(self, fact_id: str) -> bool:
+        pass
 
     @abstractmethod
-    def delete_fact(self, fact_id: str) -> bool: ...
+    def get_facts(self, subject: str | None = None, predicate: str | None = None) -> list[Fact]:
+        pass
 
     @abstractmethod
-    def save_episode(self, episode: Episode) -> None: ...
+    def save_preference(self, preference: Preference) -> None:
+        pass
 
     @abstractmethod
-    def get_episodes(self, query: str | None = None, limit: int = 5) -> list[Episode]: ...
+    def get_preference(self, key: str) -> Preference | None:
+        pass
 
     @abstractmethod
-    def save_preference(self, pref: Preference) -> None: ...
+    def get_preferences(self) -> list[Preference]:
+        pass
 
     @abstractmethod
-    def get_preference(self, key: str) -> Preference | None: ...
+    def get_all_preferences(self) -> list[Preference]:
+        pass
 
     @abstractmethod
-    def delete_preference(self, key: str) -> bool: ...
+    def delete_preference(self, key: str) -> bool:
+        pass
 
     @abstractmethod
-    def get_all_preferences(self) -> list[Preference]: ...
+    def save_episode(self, episode: Episode) -> None:
+        pass
 
     @abstractmethod
-    def close(self) -> None: ...
+    def get_episodes(self, limit: int = 50, query: str | None = None) -> list[Episode]:
+        pass
 
 
 class SQLiteMemoryStore(MemoryStore):
-    """Thread-safe SQLite persistent store for Fact, Episode, and Preference records."""
+    """Thread-safe SQLite persistent store implementation for AURA's memory systems."""
 
     def __init__(self, db_path: str = "data/aura.db") -> None:
         self.db_path = db_path
@@ -61,10 +68,11 @@ class SQLiteMemoryStore(MemoryStore):
         with self._lock:
             if self._conn is None:
                 dir_name = os.path.dirname(self.db_path)
-                if dir_name and not os.path.exists(dir_name):
+                if dir_name:
                     os.makedirs(dir_name, exist_ok=True)
                 self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
                 self._conn.row_factory = sqlite3.Row
+                self._conn.execute("PRAGMA foreign_keys = ON;")
             return self._conn
 
     def _init_db(self) -> None:
@@ -78,9 +86,9 @@ class SQLiteMemoryStore(MemoryStore):
                         id TEXT PRIMARY KEY,
                         subject TEXT NOT NULL,
                         predicate TEXT NOT NULL,
-                        object_val TEXT NOT NULL,
-                        confidence REAL NOT NULL DEFAULT 1.0,
-                        source TEXT NOT NULL DEFAULT 'user',
+                        object TEXT NOT NULL,
+                        confidence REAL NOT NULL,
+                        source TEXT NOT NULL,
                         created_at TEXT NOT NULL
                     )
                     """
@@ -89,10 +97,10 @@ class SQLiteMemoryStore(MemoryStore):
                     """
                     CREATE TABLE IF NOT EXISTS episodes (
                         id TEXT PRIMARY KEY,
-                        summary TEXT NOT NULL,
-                        details TEXT NOT NULL DEFAULT '',
                         timestamp TEXT NOT NULL,
-                        tags TEXT NOT NULL DEFAULT '[]',
+                        event_type TEXT NOT NULL DEFAULT 'episode',
+                        summary TEXT NOT NULL,
+                        payload TEXT NOT NULL DEFAULT '{}',
                         importance REAL NOT NULL DEFAULT 1.0
                     )
                     """
@@ -107,6 +115,51 @@ class SQLiteMemoryStore(MemoryStore):
                     )
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_plans (
+                        plan_id TEXT PRIMARY KEY,
+                        goal_id TEXT NOT NULL,
+                        goal_description TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        replan_count INTEGER NOT NULL DEFAULT 0,
+                        max_replans INTEGER NOT NULL DEFAULT 2,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                try:
+                    conn.execute(
+                        "ALTER TABLE agent_plans ADD COLUMN replan_count "
+                        "INTEGER NOT NULL DEFAULT 0;"
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    conn.execute(
+                        "ALTER TABLE agent_plans ADD COLUMN max_replans INTEGER NOT NULL DEFAULT 2;"
+                    )
+                except Exception:
+                    pass
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_tasks (
+                        task_id TEXT PRIMARY KEY,
+                        plan_id TEXT NOT NULL,
+                        task_order INTEGER NOT NULL,
+                        description TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        tool_name TEXT,
+                        parameters_json TEXT NOT NULL DEFAULT '{}',
+                        result_json TEXT,
+                        error TEXT,
+                        FOREIGN KEY (plan_id) REFERENCES agent_plans(plan_id) ON DELETE CASCADE
+                    )
+                    """
+                )
             logger.info(f"SQLiteMemoryStore initialized at '{self.db_path}'")
         except Exception as exc:
             logger.error(f"Failed to initialize SQLite database '{self.db_path}': {exc}")
@@ -115,16 +168,11 @@ class SQLiteMemoryStore(MemoryStore):
         with self._lock:
             try:
                 conn = self._get_connection()
-                iso_created = (
-                    fact.created_at.isoformat()
-                    if isinstance(fact.created_at, datetime)
-                    else str(fact.created_at)
-                )
                 with conn:
                     conn.execute(
                         """
                         INSERT OR REPLACE INTO facts
-                        (id, subject, predicate, object_val, confidence, source, created_at)
+                        (id, subject, predicate, object, confidence, source, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
@@ -134,60 +182,12 @@ class SQLiteMemoryStore(MemoryStore):
                             fact.object_val,
                             fact.confidence,
                             fact.source,
-                            iso_created,
+                            fact.created_at.isoformat(),
                         ),
                     )
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error saving fact '{fact.id}': {exc}")
-
-    def get_facts(
-        self, subject: str | None = None, predicate: str | None = None
-    ) -> list[Fact]:
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                query = (
-                    "SELECT id, subject, predicate, object_val, confidence, source, created_at "
-                    "FROM facts"
-                )
-                params: list[Any] = []
-                where_clauses: list[str] = []
-
-                if subject is not None:
-                    where_clauses.append("LOWER(subject) LIKE ?")
-                    params.append(f"%{subject.lower()}%")
-                if predicate is not None:
-                    where_clauses.append("LOWER(predicate) LIKE ?")
-                    params.append(f"%{predicate.lower()}%")
-
-                if where_clauses:
-                    query += " WHERE " + " AND ".join(where_clauses)
-
-                query += " ORDER BY created_at DESC"
-
-                cursor = conn.execute(query, params)
-                rows = cursor.fetchall()
-                facts: list[Fact] = []
-                for r in rows:
-                    dt = self._parse_iso(r["created_at"])
-                    facts.append(
-                        Fact(
-                            id=r["id"],
-                            subject=r["subject"],
-                            predicate=r["predicate"],
-                            object_val=r["object_val"],
-                            confidence=float(r["confidence"]),
-                            source=r["source"],
-                            created_at=dt,
-                        )
-                    )
-            except Exception as exc:
-                logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error querying facts: {exc}")
-                return []
-            else:
-                return facts
+                logger.error(f"Failed to save fact '{fact.id}': {exc}")
 
     def delete_fact(self, fact_id: str) -> bool:
         with self._lock:
@@ -198,124 +198,112 @@ class SQLiteMemoryStore(MemoryStore):
                     return cur.rowcount > 0
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error deleting fact '{fact_id}': {exc}")
+                logger.error(f"Failed to delete fact '{fact_id}': {exc}")
                 return False
 
-    def save_episode(self, episode: Episode) -> None:
+    def get_facts(self, subject: str | None = None, predicate: str | None = None) -> list[Fact]:
         with self._lock:
             try:
                 conn = self._get_connection()
-                iso_ts = (
-                    episode.timestamp.isoformat()
-                    if isinstance(episode.timestamp, datetime)
-                    else str(episode.timestamp)
-                )
-                tags_json = json.dumps(episode.tags)
-                with conn:
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO episodes
-                        (id, summary, details, timestamp, tags, importance)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            episode.id,
-                            episode.summary,
-                            episode.details,
-                            iso_ts,
-                            tags_json,
-                            episode.importance,
-                        ),
-                    )
-            except Exception as exc:
-                logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error saving episode '{episode.id}': {exc}")
-
-    def get_episodes(self, query: str | None = None, limit: int = 5) -> list[Episode]:
-        with self._lock:
-            try:
-                conn = self._get_connection()
-                sql = "SELECT id, summary, details, timestamp, tags, importance FROM episodes"
+                sql = "SELECT * FROM facts"
                 params: list[Any] = []
-                if query:
-                    sql += " WHERE LOWER(summary) LIKE ? OR LOWER(details) LIKE ?"
-                    params.extend([f"%{query.lower()}%", f"%{query.lower()}%"])
-                sql += " ORDER BY timestamp DESC LIMIT ?"
-                params.append(limit)
+                where_clauses: list[str] = []
+
+                if subject is not None:
+                    where_clauses.append("subject = ?")
+                    params.append(subject)
+                if predicate is not None:
+                    where_clauses.append("predicate = ?")
+                    params.append(predicate)
+
+                if where_clauses:
+                    sql += " WHERE " + " AND ".join(where_clauses)
+                sql += " ORDER BY created_at DESC"
 
                 cursor = conn.execute(sql, params)
                 rows = cursor.fetchall()
-                episodes: list[Episode] = []
-                for r in rows:
-                    dt = self._parse_iso(r["timestamp"])
-                    try:
-                        tags_list = json.loads(r["tags"])
-                    except Exception:
-                        tags_list = []
-                    episodes.append(
-                        Episode(
-                            id=r["id"],
-                            summary=r["summary"],
-                            details=r["details"],
-                            timestamp=dt,
-                            tags=tags_list,
-                            importance=float(r["importance"]),
+                facts: list[Fact] = []
+                for row in rows:
+                    facts.append(
+                        Fact(
+                            id=row["id"],
+                            subject=row["subject"],
+                            predicate=row["predicate"],
+                            object_val=row["object"],
+                            confidence=row["confidence"],
+                            source=row["source"],
                         )
                     )
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error querying episodes: {exc}")
+                logger.error(f"Failed to retrieve facts: {exc}")
                 return []
             else:
-                return episodes
+                return facts
 
-    def save_preference(self, pref: Preference) -> None:
+    def save_preference(self, preference: Preference) -> None:
         with self._lock:
             try:
                 conn = self._get_connection()
-                iso_upd = (
-                    pref.updated_at.isoformat()
-                    if isinstance(pref.updated_at, datetime)
-                    else str(pref.updated_at)
-                )
                 with conn:
                     conn.execute(
                         """
-                        INSERT OR REPLACE INTO preferences
-                        (key, value, category, updated_at)
+                        INSERT OR REPLACE INTO preferences (key, value, category, updated_at)
                         VALUES (?, ?, ?, ?)
                         """,
-                        (pref.key, pref.value, pref.category, iso_upd),
+                        (
+                            preference.key,
+                            str(preference.value),
+                            preference.category,
+                            preference.updated_at.isoformat(),
+                        ),
                     )
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error saving preference '{pref.key}': {exc}")
+                logger.error(f"Failed to save preference '{preference.key}': {exc}")
 
     def get_preference(self, key: str) -> Preference | None:
         with self._lock:
             try:
                 conn = self._get_connection()
-                cursor = conn.execute(
-                    "SELECT key, value, category, updated_at FROM preferences WHERE key = ?",
-                    (key,),
-                )
+                cursor = conn.execute("SELECT * FROM preferences WHERE key = ?", (key,))
                 row = cursor.fetchone()
-                found_pref = (
-                    Preference(
-                        key=row["key"],
-                        value=row["value"],
-                        category=row["category"],
-                        updated_at=self._parse_iso(row["updated_at"]),
-                    )
-                    if row
-                    else None
+                if row is None:
+                    return None
+                return Preference(
+                    key=row["key"],
+                    value=row["value"],
+                    category=row["category"],
                 )
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error reading preference '{key}': {exc}")
+                logger.error(f"Failed to get preference '{key}': {exc}")
                 return None
+
+    def get_preferences(self) -> list[Preference]:
+        return self.get_all_preferences()
+
+    def get_all_preferences(self) -> list[Preference]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                cursor = conn.execute("SELECT * FROM preferences ORDER BY updated_at DESC")
+                rows = cursor.fetchall()
+                prefs: list[Preference] = []
+                for row in rows:
+                    prefs.append(
+                        Preference(
+                            key=row["key"],
+                            value=row["value"],
+                            category=row["category"],
+                        )
+                    )
+            except Exception as exc:
+                logger = get_logger("SQLiteMemoryStore")
+                logger.error(f"Failed to retrieve preferences: {exc}")
+                return []
             else:
-                return found_pref
+                return prefs
 
     def delete_preference(self, key: str) -> bool:
         with self._lock:
@@ -326,32 +314,74 @@ class SQLiteMemoryStore(MemoryStore):
                     return cur.rowcount > 0
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error deleting preference '{key}': {exc}")
+                logger.error(f"Failed to delete preference '{key}': {exc}")
                 return False
 
-    def get_all_preferences(self) -> list[Preference]:
+    def save_episode(self, episode: Episode) -> None:
         with self._lock:
             try:
                 conn = self._get_connection()
-                cursor = conn.execute("SELECT key, value, category, updated_at FROM preferences")
+                payload_str = json.dumps({"details": episode.details, "tags": episode.tags})
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO episodes
+                        (id, timestamp, event_type, summary, payload, importance)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            episode.id,
+                            episode.timestamp.isoformat(),
+                            "episode",
+                            episode.summary,
+                            payload_str,
+                            episode.importance,
+                        ),
+                    )
+            except Exception as exc:
+                logger = get_logger("SQLiteMemoryStore")
+                logger.error(f"Failed to save episode '{episode.id}': {exc}")
+
+    def get_episodes(self, limit: int = 50, query: str | None = None) -> list[Episode]:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                sql = "SELECT * FROM episodes"
+                params: list[Any] = []
+                if query:
+                    sql += " WHERE summary LIKE ?"
+                    params.append(f"%{query}%")
+                sql += " ORDER BY timestamp DESC LIMIT ?"
+                params.append(limit)
+
+                cursor = conn.execute(sql, params)
                 rows = cursor.fetchall()
-                prefs: list[Preference] = []
-                for r in rows:
-                    dt = self._parse_iso(r["updated_at"])
-                    prefs.append(
-                        Preference(
-                            key=r["key"],
-                            value=r["value"],
-                            category=r["category"],
-                            updated_at=dt,
+                episodes: list[Episode] = []
+                for row in rows:
+                    details = ""
+                    tags: list[str] = []
+                    if row["payload"]:
+                        try:
+                            payload_dict = json.loads(row["payload"])
+                            details = payload_dict.get("details", "")
+                            tags = payload_dict.get("tags", [])
+                        except Exception:
+                            pass
+                    episodes.append(
+                        Episode(
+                            id=row["id"],
+                            summary=row["summary"],
+                            details=details,
+                            tags=tags,
+                            importance=row["importance"],
                         )
                     )
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
-                logger.error(f"Error listing preferences: {exc}")
+                logger.error(f"Failed to retrieve episodes: {exc}")
                 return []
             else:
-                return prefs
+                return episodes
 
     def close(self) -> None:
         with self._lock:
@@ -361,11 +391,3 @@ class SQLiteMemoryStore(MemoryStore):
                 except Exception:
                     pass
                 self._conn = None
-
-    @staticmethod
-    def _parse_iso(iso_str: str) -> datetime:
-        try:
-            return datetime.fromisoformat(iso_str)
-        except Exception:
-            from datetime import UTC
-            return datetime.now(UTC)
