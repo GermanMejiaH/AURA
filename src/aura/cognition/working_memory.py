@@ -25,8 +25,13 @@ class WorkingMemoryItem:
 class WorkingMemory:
     """Short-term working memory containing transient cognitive context (SPEC-001 Section 5.3)."""
 
-    def __init__(self, default_ttl_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        default_ttl_seconds: float = 300.0,
+        max_conversation_turns: int = 12,
+    ) -> None:
         self.default_ttl = default_ttl_seconds
+        self.max_conversation_turns = max_conversation_turns
         self._items: dict[str, WorkingMemoryItem] = {}
         self._conversation_history: list[dict[str, str]] = []
         self._active_goal: str | None = None
@@ -50,9 +55,15 @@ class WorkingMemory:
     def add_conversation_turn(self, role: str, content: str) -> None:
         with self._lock:
             self._conversation_history.append({"role": role, "content": content})
+            if len(self._conversation_history) > self.max_conversation_turns:
+                self._conversation_history = self._conversation_history[
+                    -self.max_conversation_turns :
+                ]
 
-    def get_recent_conversation(self, limit: int = 10) -> list[dict[str, str]]:
+    def get_recent_conversation(self, limit: int | None = None) -> list[dict[str, str]]:
         with self._lock:
+            if limit is None:
+                return list(self._conversation_history)
             return list(self._conversation_history[-limit:])
 
     def set_active_goal(self, goal: str | None) -> None:

@@ -473,15 +473,20 @@ def _handle_converse(aura: AURA, arg: str) -> None:
                 tts.speak(farewell)
                 break
 
-            # LLM reasoning
-            llm_response = llm.generate_response(
-                prompt=user_text,
-                system_instruction=(
-                    "Eres AURA, un asistente cognitivo inteligente y autónomo. "
-                    "Responde siempre en español de forma concisa, clara y amigable."
-                ),
-            )
-            aura_text = llm_response.content
+            # Cognitive reasoning via CognitionModule pipeline
+            cog_mod = aura.module_manager.get("cognition") if aura.module_manager else None
+            if isinstance(cog_mod, CognitionModule):
+                reasoning = cog_mod.process_cognitive_cycle(user_text)
+                aura_text = reasoning.summary
+            else:
+                llm_response = llm.generate_response(
+                    prompt=user_text,
+                    system_instruction=(
+                        "Eres AURA, un asistente cognitivo inteligente y autónomo. "
+                        "Responde siempre en español de forma concisa, clara y amigable."
+                    ),
+                )
+                aura_text = llm_response.content
             print(f"[AURA]: {aura_text}")
             tts.speak(aura_text)
             rounds += 1

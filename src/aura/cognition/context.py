@@ -44,7 +44,7 @@ class CognitiveContext:
 
         if self.conversation_history:
             parts.append("Historial conversacional reciente:")
-            for turn in self.conversation_history[-6:]:
+            for turn in self.conversation_history[-12:]:
                 role = "Usuario" if turn.get("role") == "user" else "AURA"
                 parts.append(f"  [{role}]: {turn.get('content', '')}")
             parts.append("")
@@ -80,7 +80,7 @@ class CognitiveContextBuilder:
 
         history: list[dict[str, str]] = []
         if working_memory is not None:
-            history = working_memory.get_recent_conversation(limit=6)
+            history = working_memory.get_recent_conversation(limit=12)
 
         world_entities: list[str] = []
         relevant_memories: list[str] = []
