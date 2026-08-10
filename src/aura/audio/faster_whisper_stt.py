@@ -19,7 +19,7 @@ class FasterWhisperSTTProvider(STTProvider):
         device: str = "cpu",
         compute_type: str = "int8",
         default_transcript: str = "",
-        initial_prompt: str = "Hola AURA, asistente cognitivo autónomo AURA.",
+        initial_prompt: str = "AURA es una asistente virtual en español.",
         vad_filter: bool = False,
         event_bus: EventBus | None = None,
         preferences_memory: UserPreferencesMemory | None = None,
@@ -69,6 +69,7 @@ class FasterWhisperSTTProvider(STTProvider):
                 self.model_size_or_path,
                 device=self.device,
                 compute_type=self.compute_type,
+                cpu_threads=4,
             )
         return self._model
 
@@ -77,6 +78,8 @@ class FasterWhisperSTTProvider(STTProvider):
         audio_bytes: bytes,
         language: str = "es",
     ) -> STTResult:
+        import re
+
         model = self._get_model()
 
         # Handle raw audio bytes or file path
@@ -93,7 +96,11 @@ class FasterWhisperSTTProvider(STTProvider):
 
         try:
             effective_prompt = self._get_effective_prompt()
-            kwargs: dict[str, Any] = {"language": language}
+            kwargs: dict[str, Any] = {
+                "language": language,
+                "beam_size": 2,
+                "best_of": 2,
+            }
             if effective_prompt:
                 kwargs["initial_prompt"] = effective_prompt
             if self.vad_filter:
@@ -101,9 +108,42 @@ class FasterWhisperSTTProvider(STTProvider):
 
             segments, info = model.transcribe(tmp_path, **kwargs)
             segment_list = list(segments)
+
+            # Check no_speech_prob from Whisper model to reject silence hallucinations
+            no_speech = getattr(info, "no_speech_prob", 0.0)
+            if isinstance(no_speech, (float, int)) and no_speech > 0.45:
+                return STTResult(text="", confidence=0.0, language=language)
+
             transcript = " ".join([s.text.strip() for s in segment_list]).strip()
+
+            # Hallucination blacklist filter (common Whisper noise hallucination outputs)
+            hallucinations = (
+                "subtítulos",
+                "gracias por ver",
+                "suscríbete",
+                "amén",
+                "transcripción realizada",
+                "comunidad de youtube",
+                "continuará",
+                "suscripciones",
+                "gracias.",
+                "audio",
+            )
+            clean_lower = transcript.lower().strip()
+            if any(h in clean_lower for h in hallucinations) and len(transcript.split()) <= 4:
+                transcript = ""
+
             if not transcript and self.default_transcript:
                 transcript = self.default_transcript
+
+            # Only fix targeted greeting misrecognitions of "AURA"
+            if transcript:
+                transcript = re.sub(
+                    r"\b([Hh]ola)\s+(auda|aurora|aula|avra)\b",
+                    r"\1 AURA",
+                    transcript,
+                    flags=re.IGNORECASE,
+                )
             confidence = (
                 sum(getattr(s, "avg_logprob", 0.0) for s in segment_list) / len(segment_list)
                 if segment_list

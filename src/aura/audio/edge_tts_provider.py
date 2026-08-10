@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import asyncio
 import io
-from typing import TYPE_CHECKING, ClassVar
+import subprocess
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .tts import TTSProvider, TTSResult
 
@@ -32,6 +31,16 @@ class EdgeTTSProvider(TTSProvider):
         self.rate = rate
         self.pitch = pitch
         self.event_bus = event_bus
+        self._current_process: subprocess.Popen[Any] | None = None
+
+    def stop(self) -> None:
+        """Interrupts and stops ongoing speech playback immediately."""
+        if self._current_process is not None:
+            try:
+                self._current_process.kill()
+            except Exception:
+                pass
+            self._current_process = None
 
     def synthesize(self, text: str, voice: str = "default") -> TTSResult:
         """Converts text to MP3 audio bytes using Microsoft Edge TTS."""
@@ -87,36 +96,45 @@ class EdgeTTSProvider(TTSProvider):
             self.event_bus.publish(AudioPlaybackFinished(source="EdgeTTSProvider", text=text))
 
     def _play_fallback(self, audio_bytes: bytes) -> None:
-        """Saves MP3 to temp file and plays with system default player."""
-        import subprocess
+        """Saves MP3 to temp file and plays completely for its exact duration."""
+        import os
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
 
+        ps_script = (
+            "Add-Type -AssemblyName presentationCore ; "
+            f"$m=New-Object System.Windows.Media.MediaPlayer ; "
+            f"$m.Open([uri]'{tmp_path}') ; "
+            f"$m.Play() ; "
+            "$w=0 ; "
+            "while (-not $m.NaturalDuration.HasTimeSpan -and $w -lt 40) { "
+            "  Start-Sleep -m 100 ; $w++ "
+            "} ; "
+            "if ($m.NaturalDuration.HasTimeSpan) { "
+            "  $ms = [int]$m.NaturalDuration.TimeSpan.TotalMilliseconds ; "
+            "  Start-Sleep -m ($ms + 300) "
+            "} else { "
+            "  Start-Sleep -s 120 "
+            "} ; "
+            "$m.Close()"
+        )
+
         try:
-            # PowerShell / Windows Media Player silent playback
-            subprocess.run(
-                [
-                    "powershell",
-                    "-c",
-                    f"(New-Object Media.SoundPlayer).PlaySync() ; "
-                    f"Add-Type -AssemblyName presentationCore ; "
-                    f"$m=New-Object System.Windows.Media.MediaPlayer ; "
-                    f"$m.Open([uri]'{tmp_path}') ; "
-                    f"$m.Play() ; "
-                    f"Start-Sleep -s 5 ; "
-                    f"$m.Stop()",
-                ],
-                timeout=10,
-                check=False,
-                capture_output=True,
+            self._current_process = subprocess.Popen(
+                ["powershell", "-c", ps_script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
+            self._current_process.wait()
         except Exception:
             pass
         finally:
-            import os
-
+            self._current_process = None
             if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass

@@ -43,9 +43,9 @@ class MicrophoneRecorder:
 
     def record_until_silence(
         self,
-        max_duration_sec: float = 10.0,
+        max_duration_sec: float = 15.0,
         silence_sec: float = 1.2,
-        energy_threshold: float = 300.0,
+        energy_threshold: float = 180.0,
     ) -> bytes:
         """Records microphone input until speech ends (detected silence) or max duration reached."""
         import numpy as np
@@ -55,6 +55,8 @@ class MicrophoneRecorder:
         chunk_samples = int(chunk_duration * self.sample_rate)
         frames: list[np.ndarray[Any, Any]] = []
 
+        speech_started = False
+        consecutive_speech_chunks = 0
         silent_chunks = 0
         max_silent_chunks = int(silence_sec / chunk_duration)
         total_chunks = int(max_duration_sec / chunk_duration)
@@ -74,19 +76,23 @@ class MicrophoneRecorder:
                     if len(chunk) > 0
                     else 0.0
                 )
-                if rms < energy_threshold:
-                    silent_chunks += 1
-                else:
+                if rms >= energy_threshold:
+                    consecutive_speech_chunks += 1
+                    if consecutive_speech_chunks >= 2:
+                        speech_started = True
                     silent_chunks = 0
+                else:
+                    consecutive_speech_chunks = 0
+                    silent_chunks += 1
 
-                # Stop recording if we've accumulated speech and now hit silence
-                if len(frames) > 5 and silent_chunks >= max_silent_chunks:
+                # Stop recording only after speech started and trailing silence is reached
+                if speech_started and silent_chunks >= max_silent_chunks:
                     self.silence_detector.process_silence_duration(
                         silent_chunks * chunk_duration
                     )
                     break
 
-        if not frames:
+        if not speech_started or not frames:
             return b""
 
         full_audio = np.concatenate(frames, axis=0)

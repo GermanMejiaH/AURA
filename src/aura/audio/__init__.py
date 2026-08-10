@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+from .autonomous_agent import AutonomousVoiceAgent
 from .edge_tts_provider import EdgeTTSProvider
 from .faster_whisper_stt import FasterWhisperSTTProvider
 from .microphone import MicrophoneRecorder
@@ -12,6 +11,7 @@ from .whisper_wakeword import WhisperWakeWordDetector
 
 __all__ = [
     "AudioModule",
+    "AutonomousVoiceAgent",
     "EdgeTTSProvider",
     "FasterWhisperSTTProvider",
     "MicrophoneRecorder",

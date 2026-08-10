@@ -111,6 +111,8 @@ def run_interactive_cli() -> int:
                 _handle_listen(aura, arg)
             elif cmd in ("converse", "conversar", "hablar", "chat"):
                 _handle_converse(aura, arg)
+            elif cmd in ("auto", "autonomo", "autónomo", "agent"):
+                _handle_auto(aura)
             elif cmd in ("wake", "despertar", "espera"):
                 _handle_wake(aura)
             elif cmd == "see":
@@ -140,6 +142,7 @@ def _print_help() -> None:
     print("  • say <mensaje>          - Envía una entrada conversacional de voz a AURA")
     print("  • listen [duración]      - Captura voz real desde tu micrófono y la transcribe")
     print("  • converse               - 🔴 MODO CONVERSACIÓN: escucha → razona → habla en bucle")
+    print("  • auto                   - 🤖 MODO AUTÓNOMO: escucha voz y decide su acción")
     print("  • wake                   - 👂 MODO ESPERA: escucha el nombre 'AURA' y se activa solo")
     print("  • see <objeto>           - Envía una percepción visual de objeto")
     print("  • goal <meta>            - Define y prioriza un objetivo autónomo")
@@ -489,6 +492,52 @@ def _handle_converse(aura: AURA, arg: str) -> None:
         farewell = "Conversación interrumpida. Hasta pronto."
         print(f"\n[AURA]: {farewell}")
         tts.speak(farewell)
+
+
+def _handle_auto(aura: AURA) -> None:
+    """Continuous autonomous voice loop: listens constantly, interrupts on user speech,
+    and decides via LLM whether to IGNORE, RESPOND, or EXECUTE."""
+    import os
+
+    from aura.audio import AutonomousVoiceAgent, EdgeTTSProvider, FasterWhisperSTTProvider
+    from aura.cognition import GeminiLLMProvider, LLMProvider, OpenAILLMProvider
+
+    aura.config.load_from_env()
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    has_valid_gemini = bool(gemini_key and not gemini_key.startswith("AQ."))
+
+    llm: LLMProvider
+    if (
+        os.environ.get("GROQ_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("OPENROUTER_API_KEY")
+    ):
+        llm = OpenAILLMProvider()
+    elif has_valid_gemini:
+        llm = GeminiLLMProvider()
+    else:
+        llm = OpenAILLMProvider()
+
+    stt = FasterWhisperSTTProvider(
+        model_size_or_path="base", device="cpu", event_bus=aura.event_bus
+    )
+    tts = EdgeTTSProvider(voice="es-aura", event_bus=aura.event_bus)
+
+    agent = AutonomousVoiceAgent(
+        llm_provider=llm,
+        stt_provider=stt,
+        tts_provider=tts,
+        event_bus=aura.event_bus,
+        scheduler=aura.scheduler,
+    )
+
+    try:
+        agent._loop()
+    except KeyboardInterrupt:
+        print("\n  Saliendo del modo autónomo continuo...")
+    finally:
+        agent.stop()
 
 
 def _handle_see(aura: AURA, label: str) -> None:

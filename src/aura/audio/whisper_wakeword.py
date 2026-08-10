@@ -19,7 +19,15 @@ class WhisperWakeWordDetector(WakeWordDetector):
     Fires WakeWordDetected event when detected.
     """
 
-    DEFAULT_KEYWORDS: ClassVar[list[str]] = ["aura", "hora", "laura", "ahora"]
+    DEFAULT_KEYWORDS: ClassVar[list[str]] = [
+        "aura",
+        "auda",
+        "aurora",
+        "aula",
+        "hora",
+        "laura",
+        "ahora",
+    ]
 
     def __init__(
         self,

@@ -51,7 +51,7 @@ class OpenAILLMProvider(LLMProvider):
         if not resolved_url:
             if os.environ.get("GROQ_API_KEY"):
                 resolved_url = "https://api.groq.com/openai/v1"
-                model_name = model_name or "llama-3.3-70b-versatile"
+                model_name = model_name or "llama-3.1-8b-instant"
             elif os.environ.get("OPENROUTER_API_KEY"):
                 resolved_url = "https://openrouter.ai/api/v1"
                 model_name = model_name or "meta-llama/llama-3.1-8b-instruct:free"

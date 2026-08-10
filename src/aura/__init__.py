@@ -1,5 +1,6 @@
 from .audio import (
     AudioModule,
+    AutonomousVoiceAgent,
     EdgeTTSProvider,
     FasterWhisperSTTProvider,
     MicrophoneRecorder,
@@ -198,6 +199,7 @@ __all__ = [
     "AudioPlaybackFinished",
     "AudioPlaybackStarted",
     "AutonomousGoal",
+    "AutonomousVoiceAgent",
     "AutonomyModule",
     "BaseModule",
     "BaseTool",

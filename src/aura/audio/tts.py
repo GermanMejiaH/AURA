@@ -21,6 +21,10 @@ class TTSProvider(ABC):
     @abstractmethod
     def synthesize(self, text: str, voice: str = "default") -> TTSResult: ...
 
+    def stop(self) -> None:
+        """Interrupts and stops ongoing speech playback."""
+        pass
+
 
 class MockTTSProvider(TTSProvider):
     """Mock Text-to-Speech provider for testing."""

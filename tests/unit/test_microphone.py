@@ -21,7 +21,7 @@ def test_microphone_recorder_fixed_duration():
 def test_microphone_recorder_until_silence():
     recorder = MicrophoneRecorder(sample_rate=16000)
 
-    fake_chunk = np.zeros((1600, 1), dtype=np.int16)
+    fake_chunk = np.ones((1600, 1), dtype=np.int16) * 500
     mock_stream = MagicMock()
     mock_stream.__enter__.return_value = mock_stream
     mock_stream.read.return_value = (fake_chunk, False)
