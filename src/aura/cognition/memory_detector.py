@@ -30,17 +30,9 @@ class ExplicitMemoryDetector:
 
     @classmethod
     def _normalize_predicate(cls, raw_key: str) -> str:
-        # Strip temporal adverbs and conversational words
-        k = re.sub(
-            r"\b(ahora|actualmente|hoy|hoy\s+en\s+dia|en\s+este\s+momento|de\s+ahora\s+en\s+adelante)\b",
-            "",
-            raw_key,
-            flags=re.IGNORECASE,
-        )
-        # Strip leading possessives and articles
-        k = re.sub(r"^\s*(?:mi|mis|el|la|los|las)\s+", "", k, flags=re.IGNORECASE)
-        k = k.strip().replace(" ", "_")
-        return re.sub(r"_+", "_", k).strip("_")
+        from ..memory.canonicalization import canonicalize_key
+
+        return canonicalize_key(raw_key)
 
     @classmethod
     def detect(cls, input_text: str) -> ExplicitMemoryDirective:

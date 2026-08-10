@@ -161,3 +161,74 @@ def test_comida_favorita_update_persistence(tmp_path: Path) -> None:
     assert "la pizza" not in sys_prompt.lower()
 
     aura2.shutdown(wait=True)
+
+
+def test_multi_step_food_update_sequence_and_independence(tmp_path: Path) -> None:
+    db_file = str(tmp_path / "multi_step_food.db")
+
+    # ==========================================
+    # SESSION 1: Direct statement (pizza), Update 1 (hamburguesa), Update 2 (pasta), and Alias check
+    # ==========================================
+    cfg1 = ConfigurationManager()
+    cfg1.set("memory.db_path", db_file)
+    cfg1.set("llm.provider", "mock")
+
+    aura1 = AURA(config=cfg1, options=AURABootOptions())
+    aura1.boot()
+
+    cog1 = aura1.container.resolve(CognitionModule)
+    assert cog1 is not None
+
+    # Independent fact: color_favorito
+    cog1.process_cognitive_cycle("Recuerda que mi color favorito es el verde.")
+
+    # Step 1: Direct statement (pizza)
+    cog1.process_cognitive_cycle("Mi comida favorita es la pizza.")
+
+    # Step 2: Update 1 (hamburguesa)
+    cog1.process_cognitive_cycle("Ahora mi comida favorita es la hamburguesa.")
+
+    # Step 3: Update 2 (pasta)
+    cog1.process_cognitive_cycle("Ahora mi comida favorita es la pasta.")
+
+    # Step 4: Alias directive check
+    cog1.process_cognitive_cycle("Recuerda que mi comida favorita ahora es la pasta.")
+
+    aura1.shutdown(wait=True)
+
+    # Verify SQLite DB directly
+    store_checker = SQLiteMemoryStore(db_path=db_file)
+    facts = store_checker.get_facts(subject="usuario", predicate="comida_favorita")
+    assert len(facts) == 1
+    assert facts[0].object_val == "la pasta"
+
+    prefs = store_checker.get_all_preferences()
+    pref_keys = [p.key for p in prefs]
+    assert "comida_favorita" in pref_keys
+    assert "comida_favorita_ahora" not in pref_keys
+    assert "color_favorito" in pref_keys
+
+    store_checker.close()
+
+    # ==========================================
+    # SESSION 2: Reboot AURA with same DB and verify context
+    # ==========================================
+    cfg2 = ConfigurationManager()
+    cfg2.set("memory.db_path", db_file)
+    cfg2.set("llm.provider", "mock")
+
+    aura2 = AURA(config=cfg2, options=AURABootOptions())
+    aura2.boot()
+
+    cog2 = aura2.container.resolve(CognitionModule)
+    assert cog2 is not None
+
+    ctx = cog2.context_builder.build("¿Cuál es mi comida favorita?")
+    sys_prompt = ctx.to_system_prompt()
+
+    assert "la pasta" in sys_prompt.lower()
+    assert "el verde" in sys_prompt.lower()
+    assert "la pizza" not in sys_prompt.lower()
+    assert "la hamburguesa" not in sys_prompt.lower()
+
+    aura2.shutdown(wait=True)

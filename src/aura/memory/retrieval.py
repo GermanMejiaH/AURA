@@ -42,6 +42,18 @@ CONCEPT_ALIASES: dict[str, set[str]] = {
         "gusta",
         "prefiero",
     },
+    "comida_favorita": {
+        "comida",
+        "favorita",
+        "preferida",
+        "gusta",
+        "prefiero",
+        "plato",
+        "alimento",
+        "comer",
+        "ahorita",
+        "menu",
+    },
     "actividad": {
         "estudiando",
         "estudio",
@@ -132,15 +144,19 @@ class MemoryRetrievalEngine:
         return score * float(fact.confidence)
 
     def score_preference(self, pref: Preference, query_tokens: set[str]) -> float:
-        norm_key = normalize_text(pref.key)
+        from .canonicalization import canonicalize_key
+
+        canon_k = canonicalize_key(pref.key)
+        norm_key = normalize_text(canon_k)
         norm_val = normalize_text(pref.value)
         val_tokens = set(norm_val.split())
 
         score = 0.0
-        if norm_key in query_tokens:
+        norm_phrase = normalize_text(" ".join(query_tokens))
+        if norm_key in query_tokens or norm_key.replace("_", " ") in norm_phrase:
             score += self.W_EXACT_PREDICATE
 
-        aliases = CONCEPT_ALIASES.get(pref.key, set())
+        aliases = CONCEPT_ALIASES.get(canon_k, set()) | CONCEPT_ALIASES.get(pref.key, set())
         if any(token in aliases for token in query_tokens):
             score += self.W_CONCEPT_ALIAS
 

@@ -39,6 +39,9 @@ class MemoryStore(ABC):
     def get_preference(self, key: str) -> Preference | None: ...
 
     @abstractmethod
+    def delete_preference(self, key: str) -> bool: ...
+
+    @abstractmethod
     def get_all_preferences(self) -> list[Preference]: ...
 
     @abstractmethod
@@ -313,6 +316,18 @@ class SQLiteMemoryStore(MemoryStore):
                 return None
             else:
                 return found_pref
+
+    def delete_preference(self, key: str) -> bool:
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                with conn:
+                    cur = conn.execute("DELETE FROM preferences WHERE key = ?", (key,))
+                    return cur.rowcount > 0
+            except Exception as exc:
+                logger = get_logger("SQLiteMemoryStore")
+                logger.error(f"Error deleting preference '{key}': {exc}")
+                return False
 
     def get_all_preferences(self) -> list[Preference]:
         with self._lock:

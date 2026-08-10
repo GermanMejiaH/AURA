@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .canonicalization import canonicalize_key
 from .consolidation import MemoryConsolidator
 from .episodic import EpisodicMemory
 from .models import Episode, Fact, MemoryQueryResult, Preference
@@ -22,4 +23,5 @@ __all__ = [
     "SQLiteMemoryStore",
     "SemanticMemory",
     "UserPreferencesMemory",
+    "canonicalize_key",
 ]
