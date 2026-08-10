@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 from .action_coordinator import ActionCoordinator, ActionResult
 from .attention import AttentionItem, AttentionLevel, AttentionManager
+from .context import CognitiveContext, CognitiveContextBuilder
 from .decision import Decision, DecisionEngine, Intent
+from .factory import create_llm_provider
 from .gemini_provider import GeminiLLMProvider
 from .module import CognitionModule
 from .openai_provider import OpenAILLMProvider
@@ -20,6 +20,8 @@ __all__ = [
     "AttentionLevel",
     "AttentionManager",
     "CognitionModule",
+    "CognitiveContext",
+    "CognitiveContextBuilder",
     "CognitiveState",
     "CognitiveStateMachine",
     "Decision",
@@ -38,4 +40,5 @@ __all__ = [
     "ReasoningResult",
     "WorkingMemory",
     "WorkingMemoryItem",
+    "create_llm_provider",
 ]

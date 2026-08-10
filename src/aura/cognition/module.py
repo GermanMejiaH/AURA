@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from ..config import ConfigurationManager
 from ..container import DependencyContainer
 from ..events import EventBus
@@ -8,9 +10,11 @@ from ..modules.base import BaseModule
 from ..world import CognitiveWorldModel
 from .action_coordinator import ActionCoordinator
 from .attention import AttentionManager
+from .context import CognitiveContextBuilder
 from .decision import DecisionEngine
+from .factory import create_llm_provider
 from .planner import Planner
-from .provider import LLMProvider, MockLLMProvider
+from .provider import LLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
 from .states import CognitiveState, CognitiveStateMachine
 from .working_memory import WorkingMemory
@@ -29,6 +33,7 @@ class CognitionModule(BaseModule):
         container: DependencyContainer | None = None,
         event_bus: EventBus | None = None,
         state_machine: CognitiveStateMachine | None = None,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         super().__init__(config, container, event_bus)
         self.state_machine = (
@@ -38,7 +43,11 @@ class CognitionModule(BaseModule):
         )
         self.attention = AttentionManager()
         self.working_memory = WorkingMemory()
-        self.llm_provider: LLMProvider = MockLLMProvider()
+        self.llm_provider: LLMProvider = (
+            llm_provider
+            if llm_provider is not None
+            else create_llm_provider(config=config, container=container)
+        )
         self.reasoning = ReasoningEngine(
             llm_provider=self.llm_provider,
             working_memory=self.working_memory,
@@ -46,6 +55,7 @@ class CognitionModule(BaseModule):
         self.decision = DecisionEngine()
         self.planner = Planner()
         self.coordinator = ActionCoordinator(event_bus=event_bus)
+        self.context_builder = CognitiveContextBuilder(container=container)
 
     def on_initialize(self) -> None:
         logger = get_logger("CognitionModule")
@@ -56,20 +66,28 @@ class CognitionModule(BaseModule):
             self._container.register(CognitiveStateMachine, instance=self.state_machine)
             self._container.register(AttentionManager, instance=self.attention)
             self._container.register(WorkingMemory, instance=self.working_memory)
+            self._container.register(LLMProvider, instance=self.llm_provider)
             self._container.register(ReasoningEngine, instance=self.reasoning)
             self._container.register(DecisionEngine, instance=self.decision)
             self._container.register(Planner, instance=self.planner)
             self._container.register(ActionCoordinator, instance=self.coordinator)
 
+            # Update context builder container reference
+            self.context_builder.container = self._container
+
             # Connect CWM if available in container
             if self._container.has(CognitiveWorldModel):
                 self.reasoning.cwm = self._container.resolve(CognitiveWorldModel)
 
-        logger.info(f"CognitionModule initialized [state={self.state_machine.state.value}]")
+        logger.info(
+            f"CognitionModule initialized [state={self.state_machine.state.value}, "
+            f"llm={type(self.llm_provider).__name__}]"
+        )
 
     def process_cognitive_cycle(self, input_text: str, source: str = "user") -> ReasoningResult:
-        """Runs full cognitive cycle: Attention -> Memory -> Reasoning -> Plan -> Action."""
+        """Runs cognitive cycle: Attention -> Memory -> Context -> Reasoning -> Action."""
         logger = get_logger("CognitionModule")
+        t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
 
         # 1. Attention evaluation
@@ -77,11 +95,28 @@ class CognitionModule(BaseModule):
         if att_item:
             logger.debug(f"Attention focused on: {att_item.target} (priority={att_item.priority})")
 
-        # 2. Working Memory update
-        self.working_memory.add_conversation_turn("user", input_text)
+        # 2. Build Cognitive Context
+        t0 = time.perf_counter()
+        default_identity = (
+            "Eres AURA (Adaptive Unified Reasoning Assistant), asistente de voz en español. "
+            "Respondes de forma natural, concisa y directa (1 a 3 oraciones)."
+        )
+        system_identity = (
+            self._config.get_typed("llm.system_identity", str, default_identity)
+            if self._config is not None
+            else ""
+        )
+        cognitive_context = self.context_builder.build(
+            input_text=input_text,
+            system_instruction=system_identity,
+            working_memory=self.working_memory,
+        )
+        t_context_build = time.perf_counter() - t0
 
-        # 3. Reasoning
-        reasoning_res = self.reasoning.analyze(input_text)
+        # 3. Reasoning via LLM Provider
+        t0 = time.perf_counter()
+        reasoning_res = self.reasoning.analyze(input_text, cognitive_context=cognitive_context)
+        t_llm_request = time.perf_counter() - t0
 
         # 4. Decision
         decision_obj = self.decision.evaluate(reasoning_res)
@@ -93,8 +128,15 @@ class CognitionModule(BaseModule):
         self.state_machine.transition_to(CognitiveState.EXECUTING, reason="executing_plan")
         self.coordinator.execute_plan(plan)
 
-        # 7. Complete cycle -> IDLE
+        # 7. Complete cycle -> Working Memory update & IDLE
+        self.working_memory.add_conversation_turn("user", input_text)
         self.working_memory.add_conversation_turn("assistant", reasoning_res.summary)
         self.state_machine.transition_to(CognitiveState.IDLE, reason="cycle_complete")
+
+        t_total = time.perf_counter() - t_cycle_start
+        logger.info(
+            f"Cognitive cycle complete: context_build={t_context_build:.3f}s "
+            f"llm_request={t_llm_request:.3f}s total={t_total:.3f}s"
+        )
 
         return reasoning_res

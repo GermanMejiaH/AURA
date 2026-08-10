@@ -43,6 +43,8 @@ class VoiceTurnMetrics:
 
     capture_sec: float = 0.0
     stt_sec: float = 0.0
+    context_sec: float = 0.0
+    llm_sec: float = 0.0
     cognition_sec: float = 0.0
     tts_sec: float = 0.0
     playback_sec: float = 0.0

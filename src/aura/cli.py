@@ -644,7 +644,14 @@ def run_voice_cli() -> int:
             tts_provider=tts_prov,
         )
 
-    print("\n  🧠 Módulo de Cognición Activo")
+    llm_name = "Mock"
+    if aura.module_manager is not None:
+        cog_mod = aura.module_manager.get("cognition")
+        if isinstance(cog_mod, CognitionModule):
+            llm_name = type(cog_mod.llm_provider).__name__
+
+    print("\n  🧠 Módulo de Cognición Activo (AURA 0.3)")
+    print(f"  🤖 Proveedor LLM: {llm_name}")
     print("  🎙️ Captura de Micrófono Lista (SoundDevice)")
     print("  🔊 Reproducción por Altavoz Lista (SoundDevice)")
     print("  🗣️ STT: Faster Whisper | TTS: Edge TTS\n")
