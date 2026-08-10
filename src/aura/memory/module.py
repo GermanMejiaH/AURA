@@ -11,6 +11,7 @@ from .models import Episode
 from .preferences import UserPreferencesMemory
 from .retrieval import MemoryRetrievalEngine
 from .semantic import SemanticMemory
+from .store import MemoryStore, SQLiteMemoryStore
 
 
 class MemoryModule(BaseModule):
@@ -25,11 +26,32 @@ class MemoryModule(BaseModule):
         config: ConfigurationManager | None = None,
         container: DependencyContainer | None = None,
         event_bus: EventBus | None = None,
+        store: MemoryStore | None = None,
     ) -> None:
         super().__init__(config, container, event_bus)
-        self.episodic = EpisodicMemory(event_bus=event_bus)
-        self.semantic = SemanticMemory(event_bus=event_bus)
-        self.preferences = UserPreferencesMemory(event_bus=event_bus)
+        db_path = (
+            config.get_typed("memory.db_path", str, "data/aura.db")
+            if config
+            else "data/aura.db"
+        )
+        enabled = (
+            config.get_typed("memory.enabled", bool, True)
+            if config
+            else True
+        )
+
+        self.store: MemoryStore | None = store
+        if self.store is None and enabled:
+            try:
+                self.store = SQLiteMemoryStore(db_path=db_path)
+            except Exception as exc:
+                logger = get_logger("MemoryModule")
+                logger.warning(f"Could not initialize SQLiteMemoryStore: {exc}")
+                self.store = None
+
+        self.episodic = EpisodicMemory(event_bus=event_bus, store=self.store)
+        self.semantic = SemanticMemory(event_bus=event_bus, store=self.store)
+        self.preferences = UserPreferencesMemory(event_bus=event_bus, store=self.store)
         self.retrieval = MemoryRetrievalEngine(
             episodic=self.episodic,
             semantic=self.semantic,
@@ -47,6 +69,8 @@ class MemoryModule(BaseModule):
 
         # Register IoC instances
         if self._container is not None:
+            if self.store is not None:
+                self._container.register(MemoryStore, instance=self.store)
             self._container.register(EpisodicMemory, instance=self.episodic)
             self._container.register(SemanticMemory, instance=self.semantic)
             self._container.register(UserPreferencesMemory, instance=self.preferences)

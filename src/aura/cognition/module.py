@@ -90,10 +90,34 @@ class CognitionModule(BaseModule):
         t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
 
-        # 1. Attention evaluation
+        # 1. Attention evaluation & Memory Directive check
         att_item = self.attention.evaluate_event("UserRequest", {"text": input_text}, source=source)
         if att_item:
             logger.debug(f"Attention focused on: {att_item.target} (priority={att_item.priority})")
+
+        from .memory_detector import ExplicitMemoryDetector
+
+        mem_directive = ExplicitMemoryDetector.detect(input_text)
+        if mem_directive.detected and self._container is not None:
+            from ..memory import Fact, MemoryModule
+
+            if self._container.has(MemoryModule):
+                mem_mod = self._container.resolve(MemoryModule)
+                mem_mod.semantic.add_fact(
+                    Fact(
+                        subject=mem_directive.subject,
+                        predicate=mem_directive.predicate,
+                        object_val=mem_directive.object_val,
+                        source="user",
+                    )
+                )
+                mem_mod.preferences.set_preference(
+                    mem_directive.predicate, mem_directive.object_val
+                )
+                logger.info(
+                    f"Explicit memory stored: {mem_directive.subject} "
+                    f"{mem_directive.predicate}={mem_directive.object_val}"
+                )
 
         # 2. Build Cognitive Context
         t0 = time.perf_counter()
@@ -115,7 +139,14 @@ class CognitionModule(BaseModule):
 
         # 3. Reasoning via LLM Provider
         t0 = time.perf_counter()
-        reasoning_res = self.reasoning.analyze(input_text, cognitive_context=cognitive_context)
+        if mem_directive.detected:
+            reasoning_res = ReasoningResult(
+                summary=mem_directive.confirmation_response,
+                intent="store_memory",
+                confidence=1.0,
+            )
+        else:
+            reasoning_res = self.reasoning.analyze(input_text, cognitive_context=cognitive_context)
         t_llm_request = time.perf_counter() - t0
 
         # 4. Decision

@@ -7,6 +7,7 @@ from .module import MemoryModule
 from .preferences import UserPreferencesMemory
 from .retrieval import MemoryRetrievalEngine
 from .semantic import SemanticMemory
+from .store import MemoryStore, SQLiteMemoryStore
 
 __all__ = [
     "Episode",
@@ -16,7 +17,9 @@ __all__ = [
     "MemoryModule",
     "MemoryQueryResult",
     "MemoryRetrievalEngine",
+    "MemoryStore",
     "Preference",
+    "SQLiteMemoryStore",
     "SemanticMemory",
     "UserPreferencesMemory",
 ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .episodic import EpisodicMemory
-from .models import MemoryQueryResult
+from .models import Fact, MemoryQueryResult, Preference
 from .preferences import UserPreferencesMemory
 from .semantic import SemanticMemory
 
@@ -27,18 +27,39 @@ class MemoryRetrievalEngine:
         self.event_bus = event_bus
 
     def query(self, search_text: str, limit: int = 5) -> MemoryQueryResult:
-        episodes = self.episodic.search_episodes(search_text, limit=limit)
-        facts = self.semantic.query_facts(subject=search_text)
-        prefs = [
-            p for p in self.preferences.all_preferences() if search_text.lower() in p.key.lower()
-        ]
+        import re
 
-        result = MemoryQueryResult(episodes=episodes, facts=facts, preferences=prefs)
+        clean_text = search_text.lower()
+        words = [w for w in re.findall(r"\w+", clean_text) if len(w) > 2]
+
+        episodes = self.episodic.search_episodes(search_text, limit=limit)
+
+        all_facts = self.semantic.all_facts()
+        matched_facts: list[Fact] = []
+        for f in all_facts:
+            f_str = f"{f.subject} {f.predicate} {f.object_val}".lower()
+            if any(w in f_str for w in words) or len(all_facts) <= 10:
+                if f not in matched_facts:
+                    matched_facts.append(f)
+
+        all_prefs = self.preferences.all_preferences()
+        matched_prefs: list[Preference] = []
+        for p in all_prefs:
+            p_str = f"{p.key} {p.value}".lower()
+            if any(w in p_str for w in words) or len(all_prefs) <= 10:
+                if p not in matched_prefs:
+                    matched_prefs.append(p)
+
+        result = MemoryQueryResult(
+            episodes=episodes[:limit],
+            facts=matched_facts[:limit],
+            preferences=matched_prefs[:limit],
+        )
 
         if self.event_bus is not None:
             from ..events import MemoryQueried
 
-            total = len(episodes) + len(facts) + len(prefs)
+            total = len(episodes) + len(matched_facts) + len(matched_prefs)
             self.event_bus.publish(
                 MemoryQueried(
                     source="MemoryRetrievalEngine",
