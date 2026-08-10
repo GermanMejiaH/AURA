@@ -8,6 +8,7 @@ from .conversation_context import (
     ConversationContextFilter,
 )
 from .decision import Decision, DecisionEngine, Intent
+from .evaluator import EvaluationResult, EvaluationStatus, TaskEvaluator
 from .factory import create_llm_provider
 from .gemini_provider import GeminiLLMProvider
 from .identity import AURAIdentity, IdentityManager
@@ -43,6 +44,8 @@ __all__ = [
     "Decision",
     "DecisionEngine",
     "DetectedIntent",
+    "EvaluationResult",
+    "EvaluationStatus",
     "GeminiLLMProvider",
     "IdentityManager",
     "Intent",
@@ -60,6 +63,7 @@ __all__ = [
     "ReasoningResult",
     "SessionContext",
     "SessionManager",
+    "TaskEvaluator",
     "ToolOrchestrator",
     "WorkingMemory",
     "WorkingMemoryItem",

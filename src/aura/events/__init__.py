@@ -3,6 +3,9 @@ from __future__ import annotations
 from .bus import EventBus, EventFilter, EventHandler
 from .models import (
     ActionDispatched,
+    AgentConfirmationDenied,
+    AgentConfirmationGranted,
+    AgentStepEvaluated,
     AttentionFocused,
     AudioPlaybackFinished,
     AudioPlaybackStarted,
@@ -70,6 +73,9 @@ from .models import (
 
 __all__ = [
     "ActionDispatched",
+    "AgentConfirmationDenied",
+    "AgentConfirmationGranted",
+    "AgentStepEvaluated",
     "AttentionFocused",
     "AudioPlaybackFinished",
     "AudioPlaybackStarted",

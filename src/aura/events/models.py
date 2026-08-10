@@ -483,3 +483,28 @@ class SessionContextUpdated(Event):
     active_task: str = ""
     last_intent: str = ""
     __event_name__: ClassVar[str] = "SessionContextUpdated"
+
+
+@dataclass(frozen=True)
+class AgentStepEvaluated(Event):
+    task_id: str = ""
+    evaluation_status: str = "SUCCESS"
+    reason: str = ""
+    __event_name__: ClassVar[str] = "AgentStepEvaluated"
+
+
+@dataclass(frozen=True)
+class AgentConfirmationGranted(Event):
+    plan_id: str = ""
+    task_id: str = ""
+    tool_name: str = ""
+    __event_name__: ClassVar[str] = "AgentConfirmationGranted"
+
+
+@dataclass(frozen=True)
+class AgentConfirmationDenied(Event):
+    plan_id: str = ""
+    task_id: str = ""
+    tool_name: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "AgentConfirmationDenied"
