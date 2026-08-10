@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .working_memory import WorkingMemory
 
@@ -22,11 +22,12 @@ class CognitiveContext:
     world_entities: list[str] = field(default_factory=list)
     relevant_memories: list[str] = field(default_factory=list)
     available_tools: list[dict[str, str]] = field(default_factory=list)
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
     identity: AURAIdentity | None = None
     session_context: SessionContext | None = None
 
     def to_system_prompt(self) -> str:
-        """Formats identity, background context, memory, and tools into a system prompt."""
+        """Formats identity, background context, memory, tools, and results into prompt."""
         parts: list[str] = []
 
         if self.identity is not None:
@@ -62,6 +63,21 @@ class CognitiveContext:
             parts.append("\nRECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO:")
             for m in self.relevant_memories[:5]:
                 parts.append(f"  • {m}")
+
+        if self.tool_results:
+            parts.append(
+                "\n[RESULTADOS DE HERRAMIENTAS RECIENTES]: "
+                "Los siguientes datos provienen de herramientas ejecutadas realmente. "
+                "DEBES responder utilizando estos resultados de forma directa y verídica:"
+            )
+            for tres in self.tool_results:
+                name = tres.get("tool_name", "tool")
+                output = tres.get("output", "")
+                err = tres.get("error")
+                if err:
+                    parts.append(f"  • Herramienta '{name}': Fallo ({err})")
+                else:
+                    parts.append(f"  • Herramienta '{name}': {output}")
 
         return "\n".join(parts)
 

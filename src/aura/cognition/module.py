@@ -62,6 +62,9 @@ class CognitionModule(BaseModule):
         self.planner = Planner()
         self.coordinator = ActionCoordinator(event_bus=event_bus)
         self.context_builder = CognitiveContextBuilder(container=container)
+        from .tool_orchestrator import ToolOrchestrator
+
+        self.tool_orchestrator = ToolOrchestrator(event_bus=event_bus)
 
     def on_initialize(self) -> None:
         logger = get_logger("CognitionModule")
@@ -80,6 +83,9 @@ class CognitionModule(BaseModule):
             self._container.register(DecisionEngine, instance=self.decision)
             self._container.register(Planner, instance=self.planner)
             self._container.register(ActionCoordinator, instance=self.coordinator)
+            from .tool_orchestrator import ToolOrchestrator
+
+            self._container.register(ToolOrchestrator, instance=self.tool_orchestrator)
 
             # Update context builder container reference
             self.context_builder.container = self._container
@@ -94,7 +100,7 @@ class CognitionModule(BaseModule):
         )
 
     def process_cognitive_cycle(self, input_text: str, source: str = "user") -> ReasoningResult:
-        """Runs cognitive cycle: Attention -> Intent -> Session -> Memory -> Context."""
+        """Runs cognitive cycle: Attention -> Intent -> Session -> Memory -> Context -> Tools."""
         logger = get_logger("CognitionModule")
         t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
@@ -163,6 +169,23 @@ class CognitionModule(BaseModule):
             working_memory=self.working_memory,
         )
         t_context_build = time.perf_counter() - t0
+
+        # 2.1 Tool Orchestration (Tool Use & Action Orchestration)
+        if self._container is not None:
+            from ..tools.registry import ToolRegistry
+
+            if self._container.has(ToolRegistry):
+                tool_reg = self._container.resolve(ToolRegistry)
+                tool_results = self.tool_orchestrator.orchestrate(
+                    input_text=input_text,
+                    intent=detected_intent,
+                    registry=tool_reg,
+                )
+                if tool_results:
+                    cognitive_context.tool_results = tool_results
+                    if any(tr.get("requires_confirmation") for tr in tool_results):
+                        sess_ctx = self.session_manager.get_context()
+                        sess_ctx.active_task = "WAITING_FOR_CONFIRMATION"
 
         # 3. Reasoning via LLM Provider
         t0 = time.perf_counter()

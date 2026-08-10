@@ -5,7 +5,17 @@ from ..container import DependencyContainer
 from ..events import Event, EventBus
 from ..logging import get_logger
 from ..modules.base import BaseModule
-from .builtins import APITool, BrowserTool, CalendarTool, EmailTool, FileTool, SpotifyTool
+from .builtins import (
+    APITool,
+    BrowserTool,
+    CalculatorTool,
+    CalendarTool,
+    DateTimeTool,
+    EmailTool,
+    FileTool,
+    SpotifyTool,
+    SystemStatusTool,
+)
 from .registry import ToolRegistry
 
 
@@ -36,6 +46,9 @@ class ToolsModule(BaseModule):
         self.registry.register(SpotifyTool())
         self.registry.register(EmailTool())
         self.registry.register(APITool())
+        self.registry.register(DateTimeTool())
+        self.registry.register(CalculatorTool())
+        self.registry.register(SystemStatusTool())
 
         # Register IoC instances
         if self._container is not None:

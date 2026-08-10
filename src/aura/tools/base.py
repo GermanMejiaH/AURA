@@ -11,6 +11,14 @@ class ToolMetadata:
     description: str
     category: str = "general"
     parameters_schema: dict[str, Any] = field(default_factory=dict)
+    risk_level: str = "safe"  # "safe", "reversible", "destructive"
+    requires_confirmation: bool = False
+    read_only: bool = True
+
+    def __post_init__(self) -> None:
+        valid_risks = {"safe", "reversible", "destructive"}
+        if self.risk_level not in valid_risks:
+            self.risk_level = "safe"
 
 
 @dataclass

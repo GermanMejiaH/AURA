@@ -354,6 +354,19 @@ class ToolRegistered(Event):
 
 
 @dataclass(frozen=True)
+class ToolRequested(Event):
+    tool_name: str = ""
+    raw_text: str = ""
+    __event_name__: ClassVar[str] = "ToolRequested"
+
+
+@dataclass(frozen=True)
+class ToolExecutionStarted(Event):
+    tool_name: str = ""
+    __event_name__: ClassVar[str] = "ToolExecutionStarted"
+
+
+@dataclass(frozen=True)
 class ToolExecuted(Event):
     tool_name: str = ""
     success: bool = True
@@ -366,6 +379,14 @@ class ToolFailed(Event):
     tool_name: str = ""
     error: str = ""
     __event_name__: ClassVar[str] = "ToolFailed"
+
+
+@dataclass(frozen=True)
+class ToolConfirmationRequired(Event):
+    tool_name: str = ""
+    risk_level: str = "destructive"
+    reason: str = ""
+    __event_name__: ClassVar[str] = "ToolConfirmationRequired"
 
 
 @dataclass(frozen=True)

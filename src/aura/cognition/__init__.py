@@ -15,6 +15,7 @@ from .real_llm_provider import RealLLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
 from .session import SessionContext, SessionManager
 from .states import CognitiveState, CognitiveStateMachine
+from .tool_orchestrator import ToolOrchestrator
 from .working_memory import WorkingMemory, WorkingMemoryItem
 
 __all__ = [
@@ -49,6 +50,7 @@ __all__ = [
     "ReasoningResult",
     "SessionContext",
     "SessionManager",
+    "ToolOrchestrator",
     "WorkingMemory",
     "WorkingMemoryItem",
     "create_llm_provider",
