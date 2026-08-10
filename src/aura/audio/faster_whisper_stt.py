@@ -7,7 +7,7 @@ from .stt import STTProvider, STTResult
 from .types import AudioData
 
 if TYPE_CHECKING:
-    from ..events import EventBus
+    from ..config import ConfigurationManager
     from ..memory.preferences import UserPreferencesMemory
 
 
@@ -16,22 +16,34 @@ class FasterWhisperSTTProvider(STTProvider):
 
     def __init__(
         self,
-        model_size_or_path: str = "small",
-        device: str = "cpu",
-        compute_type: str = "int8",
+        config: ConfigurationManager | None = None,
+        model_size_or_path: str | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
         default_transcript: str = "",
         initial_prompt: str = "AURA es una asistente virtual en español.",
         vad_filter: bool = False,
-        event_bus: EventBus | None = None,
         preferences_memory: UserPreferencesMemory | None = None,
     ) -> None:
-        self.model_size_or_path = model_size_or_path
-        self.device = device
-        self.compute_type = compute_type
+        self.config = config
+        self.model_size_or_path = (
+            model_size_or_path
+            if model_size_or_path is not None
+            else (config.get_typed("stt.model", str, "small") if config else "small")
+        )
+        self.device = (
+            device
+            if device is not None
+            else (config.get_typed("stt.device", str, "cpu") if config else "cpu")
+        )
+        self.compute_type = (
+            compute_type
+            if compute_type is not None
+            else (config.get_typed("stt.compute_type", str, "int8") if config else "int8")
+        )
         self.default_transcript = default_transcript
         self.initial_prompt = initial_prompt
         self.vad_filter = vad_filter
-        self.event_bus = event_bus
         self.preferences_memory = preferences_memory
         self._model: Any = None
         self._custom_vocabulary: set[str] = set()
@@ -66,12 +78,42 @@ class FasterWhisperSTTProvider(STTProvider):
         if self._model is None:
             from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
-            self._model = WhisperModel(
-                self.model_size_or_path,
-                device=self.device,
-                compute_type=self.compute_type,
-                cpu_threads=4,
-            )
+            from ..logging import get_logger
+
+            logger = get_logger("FasterWhisperSTTProvider")
+            target_device = self.device
+            target_compute = self.compute_type
+
+            if target_device in ("cuda", "auto"):
+                try:
+                    self._model = WhisperModel(
+                        self.model_size_or_path,
+                        device="cuda",
+                        compute_type="float16" if target_compute == "float16" else "int8_float16",
+                        cpu_threads=4,
+                    )
+                    logger.info(
+                        f"FasterWhisper initialized on CUDA GPU [model={self.model_size_or_path}]"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"CUDA device unavailable or failed ({exc}). Falling back to CPU."
+                    )
+                    target_device = "cpu"
+                    target_compute = "int8"
+                    self._model = None
+
+            if self._model is None:
+                self._model = WhisperModel(
+                    self.model_size_or_path,
+                    device=target_device,
+                    compute_type=target_compute,
+                    cpu_threads=4,
+                )
+                logger.info(
+                    f"FasterWhisper initialized on CPU [model={self.model_size_or_path}, "
+                    f"compute_type={target_compute}]"
+                )
         return self._model
 
     def transcribe(
@@ -109,8 +151,26 @@ class FasterWhisperSTTProvider(STTProvider):
             if self.vad_filter:
                 kwargs["vad_filter"] = True
 
-            segments, info = model.transcribe(tmp_path, **kwargs)
-            segment_list = list(segments)
+            try:
+                segments, info = model.transcribe(tmp_path, **kwargs)
+                segment_list = list(segments)
+            except Exception as exc:
+                from ..logging import get_logger
+
+                logger = get_logger("FasterWhisperSTTProvider")
+                if self.device in ("cuda", "auto"):
+                    logger.warning(
+                        f"FasterWhisper CUDA execution failed ({exc}). Falling back to CPU..."
+                    )
+                    self.device = "cpu"
+                    self.compute_type = "int8"
+                    self._model = None
+                    model = self._get_model()
+                    segments, info = model.transcribe(tmp_path, **kwargs)
+                    segment_list = list(segments)
+                else:
+                    logger.error(f"FasterWhisper transcription failed: {exc}")
+                    return STTResult(text="", confidence=0.0, language=language)
 
             # Check no_speech_prob from Whisper model to reject silence hallucinations
             no_speech = getattr(info, "no_speech_prob", 0.0)

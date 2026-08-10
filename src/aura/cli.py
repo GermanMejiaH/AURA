@@ -343,7 +343,7 @@ def _handle_listen(aura: AURA, arg: str) -> None:
 
     print("   Audio capturado. Procesando transcripción con Faster Whisper...")
     stt = FasterWhisperSTTProvider(
-        model_size_or_path="tiny", device="cpu", event_bus=aura.event_bus
+        model_size_or_path="tiny", device="cpu"
     )
     result = stt.transcribe(audio_bytes, language="es")
 
@@ -352,7 +352,6 @@ def _handle_listen(aura: AURA, arg: str) -> None:
         print(f"     Confianza Log-Prob: {result.confidence:.2f}")
     else:
         print("\n   ⚠ No se detectó ninguna voz en la grabación.")
-
 
 
 def _handle_wake(aura: AURA) -> None:
@@ -414,9 +413,9 @@ def _handle_converse(aura: AURA, arg: str) -> None:
             pass
 
     stt = FasterWhisperSTTProvider(
-        model_size_or_path="base", device="cpu", event_bus=aura.event_bus
+        model_size_or_path="base", device="cpu"
     )
-    tts = EdgeTTSProvider(voice="es-aura", event_bus=aura.event_bus)
+    tts = EdgeTTSProvider(voice="es-aura")
 
     aura.config.load_from_env()
 
@@ -519,9 +518,9 @@ def _handle_auto(aura: AURA) -> None:
         llm = OpenAILLMProvider()
 
     stt = FasterWhisperSTTProvider(
-        model_size_or_path="base", device="cpu", event_bus=aura.event_bus
+        model_size_or_path="base", device="cpu"
     )
-    tts = EdgeTTSProvider(voice="es-aura", event_bus=aura.event_bus)
+    tts = EdgeTTSProvider(voice="es-aura")
 
     agent = AutonomousVoiceAgent(
         llm_provider=llm,
@@ -589,12 +588,124 @@ def _handle_robotics(aura: AURA, arg: str) -> None:
         print(f"  • Posición Espacial Actual: (x={pos.x}, y={pos.y}, z={pos.z})")
 
 
+def run_voice_cli() -> int:
+    """Runs AURA 0.2 controlled real voice interaction mode (Push-to-Talk)."""
+    print(
+        "╔═══════════════════════════════════════════╗\n"
+        "║            AURA VOICE MODE (0.2)          ║\n"
+        "║      Primera Interacción de Voz REAL      ║\n"
+        "╚═══════════════════════════════════════════╝"
+    )
+
+    from aura.audio import (
+        AudioModule,
+        EdgeTTSProvider,
+        FasterWhisperSTTProvider,
+        SoundDeviceInputProvider,
+        SoundDeviceOutputProvider,
+    )
+    from aura.config import ConfigurationManager
+
+    config = ConfigurationManager()
+    config.load_from_env()
+
+    input_prov = SoundDeviceInputProvider()
+    output_prov = SoundDeviceOutputProvider()
+    stt_prov = FasterWhisperSTTProvider(config=config)
+    tts_prov = EdgeTTSProvider(config=config)
+
+    options = AURABootOptions()
+    aura = AURA(options=options)
+    aura.boot()
+
+    audio_mod: AudioModule
+    if aura.module_manager is not None:
+        existing_mod = aura.module_manager.get("audio")
+        if isinstance(existing_mod, AudioModule):
+            existing_mod.audio_input = input_prov
+            existing_mod.audio_output = output_prov
+            existing_mod.stt = stt_prov
+            existing_mod.tts = tts_prov
+            audio_mod = existing_mod
+        else:
+            audio_mod = AudioModule(
+                config=config,
+                audio_input=input_prov,
+                audio_output=output_prov,
+                stt_provider=stt_prov,
+                tts_provider=tts_prov,
+            )
+    else:
+        audio_mod = AudioModule(
+            config=config,
+            audio_input=input_prov,
+            audio_output=output_prov,
+            stt_provider=stt_prov,
+            tts_provider=tts_prov,
+        )
+
+    print("\n  🧠 Módulo de Cognición Activo")
+    print("  🎙️ Captura de Micrófono Lista (SoundDevice)")
+    print("  🔊 Reproducción por Altavoz Lista (SoundDevice)")
+    print("  🗣️ STT: Faster Whisper | TTS: Edge TTS\n")
+    print("  - Presiona ENTER para comenzar a hablar.")
+    print("  - Presiona ENTER nuevamente para detener la grabación.")
+    print("  - Escribe 'exit' o 'q' + ENTER para salir.\n")
+
+    try:
+        while True:
+            cmd = input("\n[Presiona ENTER para hablar | 'q' para salir]: ").strip()
+            if cmd.lower() in ("exit", "q", "quit", "salir"):
+                print("Saliendo del modo de voz AURA...")
+                break
+
+            print(
+                "🎙️ Capturando audio del micrófono... (Presiona ENTER para detener)",
+                end="",
+                flush=True,
+            )
+            audio_mod.start_voice_capture()
+
+            _ = input()
+            print("\n🧠 Procesando turno de voz...")
+
+            turn = audio_mod.stop_voice_capture_and_process(playback=True)
+
+            if turn.recognized_text:
+                print(f"\n  [Tú]:   {turn.recognized_text}")
+                print(f"  [AURA]: {turn.response_text}")
+            else:
+                print("\n  ⚠ No se detectó ninguna voz clara en el audio.")
+
+            m = turn.metrics
+            print("\n[Métricas del turno]:")
+            print(f"  • Captura:    {m.capture_sec:.2f}s")
+            print(f"  • STT:        {m.stt_sec:.2f}s")
+            print(f"  • Cognición:  {m.cognition_sec:.2f}s")
+            print(f"  • TTS:        {m.tts_sec:.2f}s")
+            print(f"  • Playback:   {m.playback_sec:.2f}s")
+            print("  -------------------")
+            print(f"  • Total:      {m.total_sec:.2f}s")
+
+    except (KeyboardInterrupt, EOFError):
+        print("\nInterrupción detectada. Apagando AURA...")
+    finally:
+        aura.shutdown(wait=True)
+        print("AURA apagado correctamente.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="AURA CLI Real Interface Launcher")
     parser.add_argument(
-        "--interactive", "-i", action="store_true", default=True, help="Run real interactive CLI"
+        "--interactive", "-i", action="store_true", default=False, help="Run real interactive CLI"
     )
-    _ = parser.parse_args()
+    parser.add_argument(
+        "--voice", "-v", action="store_true", default=False, help="Run AURA 0.2 real voice mode"
+    )
+    args = parser.parse_args()
+    if args.voice:
+        return run_voice_cli()
     return run_interactive_cli()
 
 

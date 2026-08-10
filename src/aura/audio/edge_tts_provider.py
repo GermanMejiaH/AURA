@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import io
 import subprocess
@@ -6,7 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from .tts import TTSProvider, TTSResult
 
 if TYPE_CHECKING:
-    from ..events import EventBus
+    from ..config import ConfigurationManager
 
 
 class EdgeTTSProvider(TTSProvider):
@@ -22,15 +24,21 @@ class EdgeTTSProvider(TTSProvider):
 
     def __init__(
         self,
-        voice: str = "es-aura",
+        config: ConfigurationManager | None = None,
+        voice: str | None = None,
         rate: str = "+0%",
         pitch: str = "+0Hz",
-        event_bus: EventBus | None = None,
     ) -> None:
-        self.voice = self.VOICES.get(voice, voice)
+        self.config = config
+        default_voice = (
+            config.get_typed("tts.voice", str, "es-MX-DaliaNeural")
+            if config
+            else "es-MX-DaliaNeural"
+        )
+        selected_voice = voice if voice is not None else default_voice
+        self.voice = self.VOICES.get(selected_voice, selected_voice)
         self.rate = rate
         self.pitch = pitch
-        self.event_bus = event_bus
         self._current_process: subprocess.Popen[Any] | None = None
 
     def stop(self) -> None:
@@ -47,13 +55,21 @@ class EdgeTTSProvider(TTSProvider):
         if not text.strip():
             return TTSResult(audio_bytes=b"", text=text, duration_seconds=0.0)
 
-        voice_name = self.VOICES.get(voice, self.voice)
-        audio_bytes = asyncio.run(self._synth_async(text, voice_name))
+        voice_name = self.VOICES.get(voice, self.voice) if voice != "default" else self.voice
+
+        try:
+            audio_bytes = asyncio.run(self._synth_async(text, voice_name))
+        except Exception as exc:
+            from ..logging import get_logger
+
+            logger = get_logger("EdgeTTSProvider")
+            logger.warning(f"EdgeTTS synthesis failed ({exc}); returning empty TTSResult.")
+            return TTSResult(audio_bytes=b"", text=text, duration_seconds=0.0)
 
         return TTSResult(
             audio_bytes=audio_bytes,
             text=text,
-            duration_seconds=len(text) * 0.065,  # ~65ms per character estimate
+            duration_seconds=max(0.1, len(text) * 0.065),
         )
 
     async def _synth_async(self, text: str, voice_name: str) -> bytes:

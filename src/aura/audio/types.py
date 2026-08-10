@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -38,6 +38,18 @@ class AudioData:
 
 
 @dataclass
+class VoiceTurnMetrics:
+    """Metrics tracking execution time of each phase in a voice interaction turn."""
+
+    capture_sec: float = 0.0
+    stt_sec: float = 0.0
+    cognition_sec: float = 0.0
+    tts_sec: float = 0.0
+    playback_sec: float = 0.0
+    total_sec: float = 0.0
+
+
+@dataclass
 class AudioTurnResult:
     """Result of a processed conversational audio turn."""
 
@@ -45,3 +57,4 @@ class AudioTurnResult:
     response_text: str
     audio_output: bytes | None = None
     duration_seconds: float = 0.0
+    metrics: VoiceTurnMetrics = field(default_factory=VoiceTurnMetrics)
