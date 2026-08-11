@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import json
 import re
+import threading
 import unicodedata
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from .episodic import EpisodicMemory
-from .models import Fact, MemoryQueryResult, Preference
-from .preferences import UserPreferencesMemory
-from .semantic import SemanticMemory
+from .models import Episode, Fact, MemoryQueryResult, Preference
+from .store import SQLiteMemoryStore
 
 if TYPE_CHECKING:
     from ..events import EventBus
+    from .episodic import EpisodicMemory
+    from .preferences import UserPreferencesMemory
+    from .semantic import SemanticMemory
 
 
 def normalize_text(text: str) -> str:
@@ -77,6 +82,65 @@ CONCEPT_ALIASES: dict[str, set[str]] = {
     },
 }
 
+STOPWORDS = {
+    "a",
+    "al",
+    "an",
+    "and",
+    "ante",
+    "at",
+    "by",
+    "como",
+    "con",
+    "contra",
+    "de",
+    "del",
+    "desde",
+    "el",
+    "en",
+    "entre",
+    "es",
+    "for",
+    "fue",
+    "hacer",
+    "hacerlo",
+    "in",
+    "la",
+    "las",
+    "los",
+    "no",
+    "o",
+    "of",
+    "on",
+    "or",
+    "para",
+    "por",
+    "que",
+    "se",
+    "según",
+    "ser",
+    "si",
+    "sin",
+    "sobre",
+    "son",
+    "the",
+    "to",
+    "tras",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "with",
+    "y",
+}
+
+# Deterministic scoring weight constants for MemoryRetriever
+W_KEYWORD = 0.40
+W_INTENT = 0.25
+W_TOOL = 0.20
+W_OUTCOME = 0.10
+W_RECENCY = 0.05
+
 
 class MemoryRetrievalEngine:
     """Layered semantic retrieval & scoring engine across Episodic, Semantic, and Preferences.
@@ -117,13 +181,11 @@ class MemoryRetrievalEngine:
 
         score = 0.0
 
-        # 1. Exact predicate match
         if norm_pred in query_tokens or norm_pred.replace("_", " ") in normalize_text(
             " ".join(query_tokens)
         ):
             score += self.W_EXACT_PREDICATE
 
-        # 2. Concept alias match
         canonical_concept = norm_pred.replace("_", " ")
         aliases = CONCEPT_ALIASES.get(fact.predicate, set()) | CONCEPT_ALIASES.get(
             canonical_concept, set()
@@ -131,17 +193,14 @@ class MemoryRetrievalEngine:
         if any(token in aliases for token in query_tokens):
             score += self.W_CONCEPT_ALIAS
 
-        # 3. Token overlap with object value
         overlap = query_tokens.intersection(obj_tokens)
         if overlap:
             score += self.W_TOKEN_OVERLAP * (len(overlap) / max(len(query_tokens), 1))
 
-        # 4. Subject match
         if norm_subj in query_tokens or "usuario" in norm_subj:
             score += self.W_SUBJECT_MATCH
 
-        # Multiplier by fact confidence
-        return score * float(fact.confidence)
+        return float(score * fact.confidence)
 
     def score_preference(self, pref: Preference, query_tokens: set[str]) -> float:
         from .canonicalization import canonicalize_key
@@ -169,7 +228,6 @@ class MemoryRetrievalEngine:
     def query(self, search_text: str, limit: int = 5) -> MemoryQueryResult:
         query_tokens = self._get_query_tokens(search_text)
 
-        # 1. Search Semantic Facts
         all_facts = self.semantic.all_facts()
         fact_scores: list[tuple[float, Fact]] = []
         for f in all_facts:
@@ -183,7 +241,6 @@ class MemoryRetrievalEngine:
         )
         matched_facts = [f for _, f in fact_scores[:limit]]
 
-        # 2. Search User Preferences
         all_prefs = self.preferences.all_preferences()
         pref_scores: list[tuple[float, Preference]] = []
         for p in all_prefs:
@@ -194,7 +251,6 @@ class MemoryRetrievalEngine:
         pref_scores.sort(key=lambda x: x[0], reverse=True)
         matched_prefs = [p for _, p in pref_scores[:limit]]
 
-        # 3. Search Episodic Memory
         episodes = self.episodic.search_episodes(search_text, limit=limit)
 
         result = MemoryQueryResult(
@@ -224,3 +280,148 @@ class MemoryRetrievalEngine:
             )
 
         return result
+
+
+@dataclass(frozen=True)
+class MemoryResult:
+    episode: Episode
+    score: float
+    matched_keywords: list[str] = field(default_factory=list)
+    intent_match: bool = False
+    tool_match: bool = False
+    explanation: str = ""
+
+
+class MemoryRetriever:
+    """Deterministic, explainable hybrid retrieval engine for AURA experiences."""
+
+    def __init__(
+        self,
+        store: SQLiteMemoryStore | None = None,
+        db_path: str = "data/aura.db",
+    ) -> None:
+        self.store = store if store is not None else SQLiteMemoryStore(db_path=db_path)
+        self._lock = threading.RLock()
+
+    def _normalize_tokens(self, text: str) -> set[str]:
+        """Normalizes text into clean lowercase token words, filtering out stopwords."""
+        words = re.findall(r"\w+", text.lower())
+        return {w for w in words if w not in STOPWORDS and len(w) > 1}
+
+    def _compute_recency_score(self, episode_ts: datetime, now_ts: datetime) -> float:
+        """Computes a bounded, monotonic recency score between 0.0 and 1.0 based on age in hours."""
+        age_hours = max(0.0, (now_ts - episode_ts).total_seconds() / 3600.0)
+        return 1.0 / (1.0 + (age_hours / 12.0))
+
+    def search(
+        self,
+        query: str = "",
+        *,
+        intent_type: str | None = None,
+        tools: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[MemoryResult]:
+        """Searches and ranks episodes using deterministic scoring."""
+        if limit <= 0:
+            return []
+
+        with self._lock:
+            all_episodes = self.store.get_episodes(limit=500)
+            if not all_episodes:
+                return []
+
+            query_tokens = self._normalize_tokens(query) if query else set()
+            normalized_tools = [t.lower().strip() for t in tools] if tools else []
+            norm_intent = intent_type.lower().strip() if intent_type else None
+            now_ts = datetime.now(UTC)
+
+            results: list[MemoryResult] = []
+
+            for ep in all_episodes:
+                details_dict: dict[str, Any] = {}
+                if ep.details:
+                    try:
+                        details_dict = json.loads(ep.details)
+                    except Exception:
+                        details_dict = {}
+
+                # 1. Keyword Score
+                ep_text = f"{ep.summary} {ep.details} {' '.join(ep.tags)}"
+                ep_tokens = self._normalize_tokens(ep_text)
+
+                matched_kw: list[str] = []
+                keyword_score = 0.0
+                if query_tokens:
+                    matched_kw = sorted(list(query_tokens.intersection(ep_tokens)))
+                    keyword_score = len(matched_kw) / len(query_tokens)
+
+                # 2. Intent Match
+                intent_match = False
+                if norm_intent:
+                    ep_tags = [t.lower() for t in ep.tags]
+                    goal_desc = str(details_dict.get("goal_description", "")).lower()
+                    if norm_intent in ep_tags or norm_intent in goal_desc:
+                        intent_match = True
+                intent_score = 1.0 if intent_match else 0.0
+
+                # 3. Tool Match
+                tool_match = False
+                ep_tools = [str(t).lower() for t in details_dict.get("tools_used", [])]
+                if normalized_tools:
+                    if any(t in ep_tools for t in normalized_tools):
+                        tool_match = True
+                tool_score = 1.0 if tool_match else 0.0
+
+                # 4. Outcome Bonus
+                outcome = str(details_dict.get("outcome", "")).upper()
+                if outcome == "SUCCESS":
+                    outcome_score = 1.0
+                elif outcome != "FAILED":
+                    outcome_score = 0.5
+                else:
+                    outcome_score = 0.0
+
+                # 5. Recency Score
+                ep_ts = ep.timestamp if ep.timestamp.tzinfo else ep.timestamp.replace(tzinfo=UTC)
+                recency_score = self._compute_recency_score(ep_ts, now_ts)
+
+                total_score = round(
+                    (W_KEYWORD * keyword_score)
+                    + (W_INTENT * intent_score)
+                    + (W_TOOL * tool_score)
+                    + (W_OUTCOME * outcome_score)
+                    + (W_RECENCY * recency_score),
+                    4,
+                )
+
+                exp_parts = [
+                    f"kw_matched=[{', '.join(matched_kw)}]" if matched_kw else "kw_matched=[]",
+                    f"intent_match={intent_match}",
+                    f"tool_match={tool_match}",
+                    f"outcome={outcome or 'UNKNOWN'}",
+                    f"recency={recency_score:.2f}",
+                    f"total_score={total_score:.3f}",
+                ]
+                explanation = "; ".join(exp_parts)
+
+                results.append(
+                    MemoryResult(
+                        episode=ep,
+                        score=total_score,
+                        matched_keywords=matched_kw,
+                        intent_match=intent_match,
+                        tool_match=tool_match,
+                        explanation=explanation,
+                    )
+                )
+
+            # Deterministic sorting: score DESC, timestamp DESC, episode_id ASC
+            results.sort(
+                key=lambda r: (
+                    -round(r.score, 4),
+                    -r.episode.timestamp.timestamp(),
+                    r.episode.id,
+                )
+            )
+
+            return results[:limit]

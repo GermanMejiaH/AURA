@@ -5,6 +5,7 @@ import os
 import sqlite3
 import threading
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from typing import Any
 
 from ..logging import get_logger
@@ -183,8 +184,13 @@ class SQLiteMemoryStore(MemoryStore):
                         metadata_json TEXT NOT NULL DEFAULT '{}',
                         FOREIGN KEY (session_id)
                         REFERENCES memory_sessions(session_id) ON DELETE CASCADE
-
                     )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_conversation_turns_session_timestamp
+                    ON conversation_turns(session_id, timestamp)
                     """
                 )
             logger.info(f"SQLiteMemoryStore initialized at '{self.db_path}'")
@@ -281,7 +287,7 @@ class SQLiteMemoryStore(MemoryStore):
                         """,
                         (
                             preference.key,
-                            str(preference.value),
+                            preference.value,
                             preference.category,
                             preference.updated_at.isoformat(),
                         ),
@@ -395,6 +401,11 @@ class SQLiteMemoryStore(MemoryStore):
                             tags = payload_dict.get("tags", [])
                         except Exception:
                             pass
+                    ts = (
+                        datetime.fromisoformat(row["timestamp"])
+                        if row["timestamp"]
+                        else datetime.now(UTC)
+                    )
                     episodes.append(
                         Episode(
                             id=row["id"],
@@ -402,8 +413,10 @@ class SQLiteMemoryStore(MemoryStore):
                             details=details,
                             tags=tags,
                             importance=row["importance"],
+                            timestamp=ts,
                         )
                     )
+
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to retrieve episodes: {exc}")

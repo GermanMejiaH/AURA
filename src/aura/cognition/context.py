@@ -8,6 +8,7 @@ from .working_memory import WorkingMemory
 
 if TYPE_CHECKING:
     from ..container import DependencyContainer
+    from ..memory.models import Episode
     from .identity import AURAIdentity
     from .session import SessionContext
 
@@ -22,6 +23,7 @@ class CognitiveContext:
     working_memory_summary: str = ""
     world_entities: list[str] = field(default_factory=list)
     relevant_memories: list[str] = field(default_factory=list)
+    relevant_episodes: list[Episode] = field(default_factory=list)
     available_tools: list[dict[str, str]] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     identity: AURAIdentity | None = None
@@ -83,6 +85,14 @@ class CognitiveContext:
             parts.append("\nRECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO:")
             for m in self.relevant_memories[:5]:
                 parts.append(f"  • {m}")
+
+        if self.relevant_episodes:
+            parts.append("\n[EXPERIENCIAS EPISÓDICAS PASADAS RELEVANTES]:")
+            for ep in self.relevant_episodes[:3]:
+                clean_summary = ep.summary.replace(
+                    "</retrieved_memory>", "[/retrieved_memory_escaped]"
+                ).replace("<retrieved_memory>", "[retrieved_memory_escaped]")
+                parts.append(f"  • [episodio {ep.id}]: {clean_summary}")
 
         if self.tool_results:
             parts.append(
@@ -156,6 +166,7 @@ class CognitiveContextBuilder:
 
         world_entities: list[str] = []
         relevant_memories: list[str] = []
+        relevant_episodes: list[Episode] = []
         available_tools: list[dict[str, str]] = []
         identity_obj = None
         session_obj = None
@@ -209,6 +220,27 @@ class CognitiveContextBuilder:
             except Exception:
                 pass
 
+            # Pull Episodic Experiences via CognitiveContextManager if available
+            try:
+                from ..memory import CognitiveContextManager
+                from .intent import IntentDetector
+
+                if self.container.has(CognitiveContextManager):
+                    detected_intent = IntentDetector.detect(input_text)
+                    intent_name = (
+                        detected_intent.intent_type.value
+                        if hasattr(detected_intent.intent_type, "value")
+                        else str(detected_intent.intent_type)
+                    )
+                    cog_ctx_mgr = self.container.resolve(CognitiveContextManager)
+                    relevant_episodes = cog_ctx_mgr.get_relevant_episodes(
+                        query=input_text,
+                        intent_type=intent_name,
+                        limit=3,
+                    )
+            except Exception:
+                pass
+
             # Pull Tools metadata if available
             try:
                 from ..tools import ToolRegistry
@@ -228,6 +260,7 @@ class CognitiveContextBuilder:
             conversation_history=history,
             world_entities=world_entities,
             relevant_memories=relevant_memories,
+            relevant_episodes=relevant_episodes,
             available_tools=available_tools,
             identity=identity_obj,
             session_context=session_obj,

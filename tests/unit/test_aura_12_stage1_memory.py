@@ -223,3 +223,52 @@ def test_16_aura_11_regression_no_breakage(tmp_db_path: str) -> None:
     assert facts[0].object_val == "1.2"
     assert saved_pref is not None
     assert saved_pref.value == "es"
+
+
+def test_17_migration_coexistence_aura_11_and_12(tmp_db_path: str) -> None:
+    store = SQLiteMemoryStore(db_path=tmp_db_path)
+
+    # 1. Verify table existence via sqlite_master
+    conn = store._get_connection()
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = {row[0] for row in cur.fetchall()}
+
+    expected_tables = {
+        "facts",
+        "episodes",
+        "preferences",
+        "agent_plans",
+        "agent_tasks",
+        "memory_sessions",
+        "conversation_turns",
+    }
+    assert expected_tables.issubset(tables)
+
+    # 2. Verify index existence
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
+    indexes = {row[0] for row in cur.fetchall()}
+    assert "idx_conversation_turns_session_timestamp" in indexes
+
+    # 3. Save AURA 1.1 legacy data & AURA 1.2 conversation data simultaneously
+    mem = ConversationalMemory(store=store)
+    sess = mem.create_session(session_id="s_coexist", title="Coexistence Test")
+    turn = mem.add_turn(session_id="s_coexist", role="user", content="Coexistence content")
+
+    from aura.autonomy.agent_models import AgentGoal, AgentPlan
+    from aura.memory.plan_store import AgentPlanStore
+
+    plan_store = AgentPlanStore(store=store)
+    plan = AgentPlan(goal=AgentGoal(description="Test Coexistence Plan"))
+    plan_store.save_plan(plan)
+
+    # 4. Assert both datasets remain queryable and uncorrupted
+    retrieved_sess = mem.get_session("s_coexist")
+    retrieved_turns = mem.get_session_turns("s_coexist")
+    retrieved_plan = plan_store.get_plan(plan.plan_id)
+
+    assert retrieved_sess is not None
+    assert retrieved_sess.session_id == sess.session_id
+    assert len(retrieved_turns) == 1
+    assert retrieved_turns[0].turn_id == turn.turn_id
+    assert retrieved_plan is not None
+    assert retrieved_plan.plan_id == plan.plan_id

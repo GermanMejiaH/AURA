@@ -98,7 +98,6 @@ __all__ = [
     "ConfigLoaded",
     "ConversationTurnStored",
     "EmergencyStopTriggered",
-
     "EntityCreated",
     "EntityDeleted",
     "EntityUpdated",
@@ -141,7 +140,6 @@ __all__ = [
     "SessionClosed",
     "SessionContextUpdated",
     "SessionCreated",
-
     "SilenceDetected",
     "SpeechRecognized",
     "SpeechSynthesized",
