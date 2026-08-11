@@ -632,3 +632,13 @@ class GoalProgressUpdated(Event):
     completion_percentage: float = 0.0
     milestone_added: str | None = None
     __event_name__: ClassVar[str] = "GoalProgressUpdated"
+
+
+@dataclass(frozen=True)
+class GoalSelectedForExecution(Event):
+    goal_id: str = ""
+    description: str = ""
+    score: float = 0.0
+    rank: int = 0
+    selection_reason: str = ""
+    __event_name__: ClassVar[str] = "GoalSelectedForExecution"

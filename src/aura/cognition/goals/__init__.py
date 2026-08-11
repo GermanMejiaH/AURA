@@ -7,6 +7,7 @@ from .models import (
     PersistentGoal,
 )
 from .prioritizer import GoalPrioritizer, PrioritizedGoal
+from .selector import GoalSelector, SelectedGoal
 from .store import GoalStore
 
 __all__ = [
@@ -15,8 +16,10 @@ __all__ = [
     "GoalPrioritizer",
     "GoalPriority",
     "GoalProgress",
+    "GoalSelector",
     "GoalStatus",
     "GoalStore",
     "PersistentGoal",
     "PrioritizedGoal",
+    "SelectedGoal",
 ]

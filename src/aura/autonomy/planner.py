@@ -15,6 +15,7 @@ from ..events import (
     AgentPlanCreated,
     AgentSecurityAlert,
     EventBus,
+    GoalSelectedForExecution,
     StrategyDeliberated,
     StrategySelected,
 )
@@ -151,6 +152,47 @@ class AgentPlanner:
 
         plan = self.plan_from_strategy(goal_model, selection)
         return selection, plan
+
+    def plan_next_goal(
+        self,
+        goal_manager: Any,
+        prioritizer: Any | None = None,
+        selector: Any | None = None,
+    ) -> tuple[Any, StrategySelection, AgentPlan] | None:
+        """Selects the highest priority persistent goal and deliberates to generate an AgentPlan."""
+        from ..cognition.goals import GoalPrioritizer, GoalSelector
+
+        logger = get_logger("AgentPlanner")
+        all_goals = goal_manager.list_goals()
+        if not all_goals:
+            logger.info("No persistent goals found for execution.")
+            return None
+
+        prioritizer_engine = prioritizer or GoalPrioritizer()
+        prioritized = prioritizer_engine.prioritize(all_goals)
+
+        selector_engine = selector or GoalSelector()
+        selected = selector_engine.select_goal(prioritized)
+
+        if selected is None:
+            logger.info("No eligible persistent goals available for execution.")
+            return None
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                GoalSelectedForExecution(
+                    source="AgentPlanner",
+                    goal_id=selected.goal.goal_id,
+                    description=selected.goal.description,
+                    score=selected.score,
+                    rank=selected.rank,
+                    selection_reason=selected.selection_reason,
+                )
+            )
+
+        goal_model = selected.goal.to_goal_model()
+        selection, plan = self.deliberate_and_plan(goal_model)
+        return selected, selection, plan
 
     def create_plan(
         self,
