@@ -243,6 +243,14 @@ class EpisodicMemoryConsolidator:
                 "formatted_tree": tree_info.get("formatted_tree", ""),
             }
 
+            if event is not None:
+                strat_id = getattr(event, "strategy_id", None)
+                strat_name = getattr(event, "strategy_name", None)
+                if strat_id:
+                    details_dict["strategy_id"] = str(strat_id)
+                if strat_name:
+                    details_dict["strategy_name"] = str(strat_name)
+
             if ver_obj is not None:
                 ver_status = (
                     ver_obj.status.value

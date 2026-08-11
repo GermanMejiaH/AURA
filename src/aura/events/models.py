@@ -539,6 +539,21 @@ class AgentReplanFailed(Event):
 
 
 @dataclass(frozen=True)
+class StrategyDeliberated(Event):
+    goal_id: str = ""
+    candidates_count: int = 0
+    __event_name__: ClassVar[str] = "StrategyDeliberated"
+
+
+@dataclass(frozen=True)
+class StrategySelected(Event):
+    goal_id: str = ""
+    strategy_id: str = ""
+    strategy_name: str = ""
+    __event_name__: ClassVar[str] = "StrategySelected"
+
+
+@dataclass(frozen=True)
 class AgentPlanCreated(Event):
     plan_id: str = ""
     goal_description: str = ""
@@ -556,6 +571,8 @@ class AgentPlanCompleted(Event):
     duration_ms: float = 0.0
     verification: Any | None = None
     reflection: Any | None = None
+    strategy_id: str | None = None
+    strategy_name: str | None = None
     __event_name__: ClassVar[str] = "AgentPlanCompleted"
 
 

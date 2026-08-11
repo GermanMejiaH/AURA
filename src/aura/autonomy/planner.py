@@ -4,7 +4,20 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
-from ..events import AgentPlanCreated, AgentSecurityAlert, EventBus
+from ..cognition.deliberation import (
+    DeliberationEngine,
+    GoalModel,
+    OutcomeSimulator,
+    StrategySelection,
+    StrategySelector,
+)
+from ..events import (
+    AgentPlanCreated,
+    AgentSecurityAlert,
+    EventBus,
+    StrategyDeliberated,
+    StrategySelected,
+)
 from ..logging import get_logger
 from .agent_models import AgentGoal, AgentPlan, AgentTask, TaskStatus
 
@@ -14,7 +27,10 @@ if TYPE_CHECKING:
 
 
 class AgentPlanner:
-    """Generates structured AgentPlan domain models from high-level goals via LLM inference."""
+    """Generates structured AgentPlan domain models from high-level goals.
+
+    Uses deliberation pipeline or LLM inference.
+    """
 
     DEFAULT_MAX_PLAN_STEPS: int = 5
 
@@ -24,19 +40,134 @@ class AgentPlanner:
         registry: ToolRegistry | None = None,
         max_plan_steps: int = DEFAULT_MAX_PLAN_STEPS,
         event_bus: EventBus | None = None,
+        deliberator: DeliberationEngine | None = None,
+        simulator: OutcomeSimulator | None = None,
+        selector: StrategySelector | None = None,
     ) -> None:
         self.llm_provider = llm_provider
         self.registry = registry
         self.max_plan_steps = max_plan_steps
         self.event_bus = event_bus
+        self.deliberator = deliberator
+        self.simulator = simulator
+        self.selector = selector
+
+    def _ensure_goal_model(self, goal: AgentGoal | GoalModel | str) -> GoalModel:
+        """Converts an AgentGoal or string safely into a GoalModel."""
+        if isinstance(goal, GoalModel):
+            return goal
+        elif isinstance(goal, AgentGoal):
+            return GoalModel(
+                description=goal.description,
+                goal_id=goal.goal_id,
+                status=goal.status,
+            )
+        else:
+            return GoalModel(description=str(goal))
+
+    def plan_from_strategy(
+        self,
+        goal: AgentGoal | GoalModel,
+        selection: StrategySelection,
+    ) -> AgentPlan:
+        """Converts a chosen StrategySelection into an executable AgentPlan."""
+        target_goal = goal if isinstance(goal, AgentGoal) else AgentGoal(description=str(goal))
+        strategy = selection.chosen_strategy
+        tasks: list[AgentTask] = []
+
+        tools = list(strategy.required_tools)
+        for idx, step_desc in enumerate(strategy.steps_outline, start=1):
+            tool_name = tools[idx - 1] if idx - 1 < len(tools) else None
+            tasks.append(
+                AgentTask(
+                    description=step_desc,
+                    order=idx,
+                    tool_name=tool_name,
+                    parameters={},
+                    status=TaskStatus.PENDING,
+                )
+            )
+
+        plan = AgentPlan(
+            goal=target_goal,
+            tasks=tasks,
+            strategy_id=strategy.strategy_id,
+            strategy_name=strategy.name,
+        )
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                AgentPlanCreated(
+                    source="AgentPlanner",
+                    plan_id=plan.plan_id,
+                    goal_description=plan.goal.description,
+                    tasks_count=len(plan.tasks),
+                )
+            )
+
+        return plan
+
+    def deliberate_and_plan(
+        self,
+        goal: AgentGoal | GoalModel | str,
+    ) -> tuple[StrategySelection, AgentPlan]:
+        """Runs full E2E deliberation (DELIBERATE -> SIMULATE -> SELECT -> PLAN)."""
+        goal_model = self._ensure_goal_model(goal)
+        tools = [meta.name for meta in self.registry.list_metadata()] if self.registry else []
+
+        deliberator = self.deliberator or DeliberationEngine()
+        candidates = deliberator.deliberate(goal_model, available_tools=tools)
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                StrategyDeliberated(
+                    source="AgentPlanner",
+                    goal_id=goal_model.goal_id,
+                    candidates_count=len(candidates),
+                )
+            )
+
+        if self.simulator is None:
+            from ..memory.retrieval import MemoryRetriever
+
+            simulator = OutcomeSimulator(MemoryRetriever())
+        else:
+            simulator = self.simulator
+
+        simulations = [simulator.simulate(c, goal_model) for c in candidates]
+
+        selector = self.selector or StrategySelector()
+        selection = selector.select(goal_model, candidates, simulations)
+
+        if self.event_bus is not None:
+            self.event_bus.publish(
+                StrategySelected(
+                    source="AgentPlanner",
+                    goal_id=goal_model.goal_id,
+                    strategy_id=selection.chosen_strategy.strategy_id,
+                    strategy_name=selection.chosen_strategy.name,
+                )
+            )
+
+        plan = self.plan_from_strategy(goal_model, selection)
+        return selection, plan
 
     def create_plan(
         self,
-        goal: AgentGoal | str,
+        goal: AgentGoal | GoalModel | str,
         context: dict[str, Any] | None = None,
     ) -> AgentPlan:
-        """Translates a natural language goal into a validated AgentPlan using LLMProvider."""
+        """Translates a natural language goal into a validated AgentPlan."""
         logger = get_logger("AgentPlanner")
+
+        if (
+            self.deliberator is not None
+            or self.simulator is not None
+            or self.selector is not None
+            or isinstance(goal, GoalModel)
+        ):
+            _, plan = self.deliberate_and_plan(goal)
+            return plan
 
         if isinstance(goal, str):
             target_goal = AgentGoal(description=goal)

@@ -443,6 +443,8 @@ class AgentExecutor:
                     duration_ms=0.0,
                     verification=last_verification,
                     reflection=last_reflection,
+                    strategy_id=plan.strategy_id,
+                    strategy_name=plan.strategy_name,
                 )
             )
 

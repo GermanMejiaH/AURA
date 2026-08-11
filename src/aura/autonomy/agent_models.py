@@ -48,6 +48,8 @@ class AgentPlan:
     tasks: list[AgentTask] = field(default_factory=list)
     replan_count: int = 0
     max_replans: int = 2
+    strategy_id: str | None = None
+    strategy_name: str | None = None
 
     def get_ordered_tasks(self) -> list[AgentTask]:
         """Returns tasks sorted deterministically by their execution order."""
