@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from ..cognition.evaluator import EvaluationResult
 from ..cognition.provider import LLMProvider
+from ..cognition.reflection import ReflectionSummary
+from ..cognition.verification import VerificationResult
 from ..events import AgentSecurityAlert, EventBus
 from ..logging import get_logger
 from .agent_models import AgentPlan, AgentTask, TaskStatus
@@ -32,6 +34,8 @@ class AgentReplanner:
         observation: Observation,
         eval_result: EvaluationResult,
         registry: ToolRegistry | None = None,
+        reflection: ReflectionSummary | None = None,
+        verification: VerificationResult | None = None,
     ) -> bool:
         """Attempts to generate and validate a revised set of tasks for a plan."""
         logger = get_logger("AgentReplanner")
@@ -64,8 +68,9 @@ class AgentReplanner:
 
         if self.llm_provider is not None:
             prompt = self._build_replan_prompt(
-                plan, failed_task, observation, eval_result, registry
+                plan, failed_task, observation, eval_result, registry, reflection
             )
+
             schema = {
                 "type": "object",
                 "required": ["tasks"],
@@ -194,6 +199,7 @@ class AgentReplanner:
         observation: Observation,
         eval_result: EvaluationResult,
         registry: ToolRegistry | None,
+        reflection: ReflectionSummary | None = None,
     ) -> str:
         tools_desc = ""
         if registry is not None:
@@ -202,12 +208,24 @@ class AgentReplanner:
                 f"- {t.name}: {t.description}" for t in available_tools
             )
 
+        reflection_info = ""
+        if reflection is not None:
+            hypotheses_str = "; ".join(reflection.hypotheses)
+            reflection_info = (
+                f"\n[COGNITIVE REFLECTION & ROOT CAUSE DIAGNOSIS]\n"
+                f"- Root Cause: {reflection.root_cause}\n"
+                f"- Hypotheses: {hypotheses_str}\n"
+                f"- Lesson Learned: {reflection.lesson_learned}\n"
+                f"- Recommended Action: {reflection.recommended_action}\n"
+            )
+
         return (
             f"Goal: {plan.goal.description}\n"
             f"Failed Task: {failed_task.description} (Tool: {failed_task.tool_name})\n"
             f"Parameters: {json.dumps(failed_task.parameters)}\n"
             f"Error/Observation: {observation.error or eval_result.reason}\n"
+            f"{reflection_info}"
             f"{tools_desc}\n\n"
-            "Propose a alternative sequence of valid tasks to overcome this error "
+            "Propose an alternative sequence of valid tasks to overcome this error "
             "and achieve the goal."
         )

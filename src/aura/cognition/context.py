@@ -93,6 +93,20 @@ class CognitiveContext:
                     "</retrieved_memory>", "[/retrieved_memory_escaped]"
                 ).replace("<retrieved_memory>", "[retrieved_memory_escaped]")
                 parts.append(f"  • [episodio {ep.id}]: {clean_summary}")
+                try:
+                    import json
+
+                    details = json.loads(ep.details) if ep.details else {}
+                    lesson = details.get("lesson_learned")
+                    if lesson:
+                        clean_lesson = (
+                            str(lesson)
+                            .replace("</retrieved_memory>", "[/retrieved_memory_escaped]")
+                            .replace("<retrieved_memory>", "[retrieved_memory_escaped]")
+                        )
+                        parts.append(f"    - Lección aprendida: {clean_lesson}")
+                except Exception:
+                    pass
 
         if self.tool_results:
             parts.append(

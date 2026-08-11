@@ -155,9 +155,20 @@ class EpisodicMemoryConsolidator:
         from ..events import AgentPlanCompleted
 
         if isinstance(event, AgentPlanCompleted):
-            self.consolidate_plan(plan_id=event.plan_id, event=event)
+            self.consolidate_plan(
+                plan_id=event.plan_id,
+                event=event,
+                verification=getattr(event, "verification", None),
+                reflection=getattr(event, "reflection", None),
+            )
 
-    def consolidate_plan(self, plan_id: str, event: Any | None = None) -> Episode | None:
+    def consolidate_plan(
+        self,
+        plan_id: str,
+        event: Any | None = None,
+        verification: Any | None = None,
+        reflection: Any | None = None,
+    ) -> Episode | None:
         with self._lock:
             if not plan_id:
                 return None
@@ -212,13 +223,16 @@ class EpisodicMemoryConsolidator:
             sanitized_tools = sanitize_metadata(tools_used)
             sanitized_tasks = sanitize_metadata(tasks_summary)
 
+            ver_obj = verification or (getattr(event, "verification", None) if event else None)
+            ref_obj = reflection or (getattr(event, "reflection", None) if event else None)
+
             summary = (
                 f"Ejecución agéntica '{sanitized_goal}' terminada con resultado {outcome}. "
                 f"Herramientas: {', '.join(sanitized_tools) if sanitized_tools else 'Ninguna'}. "
                 f"Re-planificaciones: {replans_count}."
             )
 
-            details_dict = {
+            details_dict: dict[str, Any] = {
                 "plan_id": plan_id,
                 "goal_description": sanitized_goal,
                 "outcome": outcome,
@@ -228,6 +242,33 @@ class EpisodicMemoryConsolidator:
                 "tasks": sanitized_tasks,
                 "formatted_tree": tree_info.get("formatted_tree", ""),
             }
+
+            if ver_obj is not None:
+                ver_status = (
+                    ver_obj.status.value
+                    if hasattr(ver_obj.status, "value")
+                    else str(ver_obj.status)
+                )
+                details_dict["verification_status"] = ver_status
+                details_dict["verification_confidence"] = getattr(ver_obj, "confidence", 1.0)
+
+            if ref_obj is not None:
+                root_cause = sanitize_metadata(getattr(ref_obj, "root_cause", ""))
+                hypotheses = sanitize_metadata(list(getattr(ref_obj, "hypotheses", [])))
+                lesson = sanitize_metadata(getattr(ref_obj, "lesson_learned", ""))
+                rec_act = sanitize_metadata(getattr(ref_obj, "recommended_action", ""))
+                ref_sev = getattr(ref_obj, "severity", "")
+                sev_val = ref_sev.value if hasattr(ref_sev, "value") else str(ref_sev)
+
+                details_dict["root_cause"] = root_cause
+                details_dict["hypotheses"] = hypotheses
+                details_dict["lesson_learned"] = lesson
+                details_dict["recommended_action"] = rec_act
+                details_dict["reflection_severity"] = sev_val
+                details_dict["reflection_confidence"] = getattr(ref_obj, "confidence", 1.0)
+
+                if lesson:
+                    summary += f" Lección aprendida: {lesson}."
 
             episode = Episode(
                 id=episode_id,

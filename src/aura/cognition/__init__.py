@@ -20,15 +20,18 @@ from .planner import Plan, Planner, PlanStep
 from .provider import LLMProvider, LLMResponse, MockLLMProvider
 from .real_llm_provider import RealLLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
+from .reflection import CognitiveReflector, ReflectionSeverity, ReflectionSummary
 from .session import SessionContext, SessionManager
 from .states import CognitiveState, CognitiveStateMachine
 from .tool_orchestrator import ToolOrchestrator
+from .verification import ActionVerifier, VerificationResult, VerificationStatus
 from .working_memory import WorkingMemory, WorkingMemoryItem
 
 __all__ = [
     "AURAIdentity",
     "ActionCoordinator",
     "ActionResult",
+    "ActionVerifier",
     "AnaphoraResolution",
     "AnaphoraResolver",
     "AttentionItem",
@@ -37,6 +40,7 @@ __all__ = [
     "CognitionModule",
     "CognitiveContext",
     "CognitiveContextBuilder",
+    "CognitiveReflector",
     "CognitiveState",
     "CognitiveStateMachine",
     "ConversationContext",
@@ -61,10 +65,14 @@ __all__ = [
     "RealLLMProvider",
     "ReasoningEngine",
     "ReasoningResult",
+    "ReflectionSeverity",
+    "ReflectionSummary",
     "SessionContext",
     "SessionManager",
     "TaskEvaluator",
     "ToolOrchestrator",
+    "VerificationResult",
+    "VerificationStatus",
     "WorkingMemory",
     "WorkingMemoryItem",
     "create_llm_provider",

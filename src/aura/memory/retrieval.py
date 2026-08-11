@@ -200,7 +200,7 @@ class MemoryRetrievalEngine:
         if norm_subj in query_tokens or "usuario" in norm_subj:
             score += self.W_SUBJECT_MATCH
 
-        return float(score * fact.confidence)
+        return score * fact.confidence
 
     def score_preference(self, pref: Preference, query_tokens: set[str]) -> float:
         from .canonicalization import canonicalize_key
@@ -385,12 +385,24 @@ class MemoryRetriever:
                 ep_ts = ep.timestamp if ep.timestamp.tzinfo else ep.timestamp.replace(tzinfo=UTC)
                 recency_score = self._compute_recency_score(ep_ts, now_ts)
 
+                # 6. Cognitive Reflection & Lesson Match
+                les_val = str(details_dict.get("lesson_learned", ""))
+                rc_val = str(details_dict.get("root_cause", ""))
+                rec_val = str(details_dict.get("recommended_action", ""))
+                lesson_text = f"{les_val} {rc_val} {rec_val}"
+                lesson_tokens = (
+                    self._normalize_tokens(lesson_text) if lesson_text.strip() else set()
+                )
+                lesson_match = bool(query_tokens and query_tokens.intersection(lesson_tokens))
+                lesson_score = 0.05 if lesson_match else 0.0
+
                 total_score = round(
                     (W_KEYWORD * keyword_score)
                     + (W_INTENT * intent_score)
                     + (W_TOOL * tool_score)
                     + (W_OUTCOME * outcome_score)
-                    + (W_RECENCY * recency_score),
+                    + (W_RECENCY * recency_score)
+                    + lesson_score,
                     4,
                 )
 
@@ -398,6 +410,7 @@ class MemoryRetriever:
                     f"kw_matched=[{', '.join(matched_kw)}]" if matched_kw else "kw_matched=[]",
                     f"intent_match={intent_match}",
                     f"tool_match={tool_match}",
+                    f"lesson_match={lesson_match}",
                     f"outcome={outcome or 'UNKNOWN'}",
                     f"recency={recency_score:.2f}",
                     f"total_score={total_score:.3f}",

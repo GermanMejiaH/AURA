@@ -554,6 +554,8 @@ class AgentPlanCompleted(Event):
     waiting_confirmation: bool = False
     steps_executed: int = 0
     duration_ms: float = 0.0
+    verification: Any | None = None
+    reflection: Any | None = None
     __event_name__: ClassVar[str] = "AgentPlanCompleted"
 
 

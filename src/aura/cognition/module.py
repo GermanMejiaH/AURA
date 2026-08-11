@@ -22,8 +22,10 @@ from .intent import Intent, IntentDetector, IntentType
 from .planner import Planner
 from .provider import LLMProvider
 from .reasoning import ReasoningEngine, ReasoningResult
+from .reflection import CognitiveReflector
 from .session import SessionManager
 from .states import CognitiveState, CognitiveStateMachine
+from .verification import ActionVerifier
 from .working_memory import WorkingMemory
 
 
@@ -68,6 +70,8 @@ class CognitionModule(BaseModule):
         self.coordinator = ActionCoordinator(event_bus=event_bus)
         self.context_builder = CognitiveContextBuilder(container=container)
         self.plan_store = plan_store if plan_store is not None else AgentPlanStore()
+        self.verifier = ActionVerifier()
+        self.reflector = CognitiveReflector()
         from ..memory import CognitiveContextManager
 
         self.cognitive_context_manager = CognitiveContextManager(event_bus=event_bus)
@@ -93,11 +97,14 @@ class CognitionModule(BaseModule):
             self._container.register(Planner, instance=self.planner)
             self._container.register(ActionCoordinator, instance=self.coordinator)
             self._container.register(AgentPlanStore, instance=self.plan_store)
+            self._container.register(ActionVerifier, instance=self.verifier)
+            self._container.register(CognitiveReflector, instance=self.reflector)
             from ..memory import CognitiveContextManager
 
             self._container.register(
                 CognitiveContextManager, instance=self.cognitive_context_manager
             )
+
             from .tool_orchestrator import ToolOrchestrator
 
             self._container.register(ToolOrchestrator, instance=self.tool_orchestrator)
