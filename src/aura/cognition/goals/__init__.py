@@ -1,3 +1,4 @@
+from .manager import GoalManager
 from .models import (
     GoalContextRef,
     GoalPriority,
@@ -5,11 +6,14 @@ from .models import (
     GoalStatus,
     PersistentGoal,
 )
+from .store import GoalStore
 
 __all__ = [
     "GoalContextRef",
+    "GoalManager",
     "GoalPriority",
     "GoalProgress",
     "GoalStatus",
+    "GoalStore",
     "PersistentGoal",
 ]

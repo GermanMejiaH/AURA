@@ -444,6 +444,8 @@ class GoalCreated(Event):
 class GoalStatusChanged(Event):
     goal_id: str = ""
     status: str = "pending"
+    old_status: str = ""
+    new_status: str = ""
     __event_name__: ClassVar[str] = "GoalStatusChanged"
 
 
@@ -606,3 +608,27 @@ class ConversationTurnStored(Event):
     turn_id: str = ""
     role: str = "user"
     __event_name__: ClassVar[str] = "ConversationTurnStored"
+
+
+@dataclass(frozen=True)
+class PersistentGoalCreated(Event):
+    goal_id: str = ""
+    description: str = ""
+    priority: str = "MEDIUM"
+    status: str = "PENDING"
+    __event_name__: ClassVar[str] = "PersistentGoalCreated"
+
+
+@dataclass(frozen=True)
+class GoalUpdated(Event):
+    goal_id: str = ""
+    updated_fields: list[str] = field(default_factory=list)
+    __event_name__: ClassVar[str] = "GoalUpdated"
+
+
+@dataclass(frozen=True)
+class GoalProgressUpdated(Event):
+    goal_id: str = ""
+    completion_percentage: float = 0.0
+    milestone_added: str | None = None
+    __event_name__: ClassVar[str] = "GoalProgressUpdated"
