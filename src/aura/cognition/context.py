@@ -9,6 +9,7 @@ from .working_memory import WorkingMemory
 if TYPE_CHECKING:
     from ..container import DependencyContainer
     from ..memory.models import Episode
+    from .goals import PrioritizedGoal
     from .identity import AURAIdentity
     from .session import SessionContext
 
@@ -24,6 +25,7 @@ class CognitiveContext:
     world_entities: list[str] = field(default_factory=list)
     relevant_memories: list[str] = field(default_factory=list)
     relevant_episodes: list[Episode] = field(default_factory=list)
+    prioritized_goals: list[PrioritizedGoal] = field(default_factory=list)
     available_tools: list[dict[str, str]] = field(default_factory=list)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     identity: AURAIdentity | None = None
@@ -108,6 +110,18 @@ class CognitiveContext:
                 except Exception:
                     pass
 
+        if self.prioritized_goals:
+            parts.append("\n[OBJETIVOS PERSISTENTES PRIORIZADOS]:")
+            for pg in self.prioritized_goals[:5]:
+                clean_desc = pg.goal.description.replace(
+                    "</retrieved_memory>", "[/retrieved_memory_escaped]"
+                ).replace("<retrieved_memory>", "[retrieved_memory_escaped]")
+                parts.append(
+                    f"  • [#{pg.rank} Score {pg.score:.1f}] "
+                    f"({pg.goal.goal_id} - {pg.goal.status.value}): "
+                    f'"{clean_desc}" ({pg.explanation})'
+                )
+
         if self.tool_results:
             parts.append(
                 "\n[RESULTADOS DE HERRAMIENTAS RECIENTES]: "
@@ -181,6 +195,7 @@ class CognitiveContextBuilder:
         world_entities: list[str] = []
         relevant_memories: list[str] = []
         relevant_episodes: list[Episode] = []
+        prioritized_goals: list[PrioritizedGoal] = []
         available_tools: list[dict[str, str]] = []
         identity_obj = None
         session_obj = None
@@ -268,6 +283,18 @@ class CognitiveContextBuilder:
             except Exception:
                 pass
 
+            # Pull PersistentGoals via GoalManager & GoalPrioritizer if available
+            try:
+                from .goals import GoalManager, GoalPrioritizer
+
+                if self.container.has(GoalManager):
+                    goal_mgr = self.container.resolve(GoalManager)
+                    all_goals = goal_mgr.list_goals()
+                    prioritizer = GoalPrioritizer()
+                    prioritized_goals = prioritizer.prioritize(all_goals)
+            except Exception:
+                pass
+
         return CognitiveContext(
             system_instruction=instruction,
             user_input=input_text,
@@ -275,6 +302,7 @@ class CognitiveContextBuilder:
             world_entities=world_entities,
             relevant_memories=relevant_memories,
             relevant_episodes=relevant_episodes,
+            prioritized_goals=prioritized_goals,
             available_tools=available_tools,
             identity=identity_obj,
             session_context=session_obj,
