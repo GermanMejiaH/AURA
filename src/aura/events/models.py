@@ -642,3 +642,14 @@ class GoalSelectedForExecution(Event):
     rank: int = 0
     selection_reason: str = ""
     __event_name__: ClassVar[str] = "GoalSelectedForExecution"
+
+
+@dataclass(frozen=True)
+class GoalOutcomeRecorded(Event):
+    goal_id: str = ""
+    plan_id: str = ""
+    status: str = ""
+    completion_percentage: float = 0.0
+    strategy_id: str | None = None
+    reason: str = ""
+    __event_name__: ClassVar[str] = "GoalOutcomeRecorded"

@@ -194,6 +194,43 @@ class AgentPlanner:
         selection, plan = self.deliberate_and_plan(goal_model)
         return selected, selection, plan
 
+    def execute_goal_cycle(
+        self,
+        goal_manager: Any,
+        executor: Any,
+        prioritizer: Any | None = None,
+        selector: Any | None = None,
+        registry: Any | None = None,
+    ) -> tuple[Any | None, Any | None, AgentPlan | None, Any | None]:
+        """Executes a single end-to-end goal-driven agency cycle:
+        SELECT -> PLAN -> ACT -> VERIFY -> REFLECT -> LEARN -> UPDATE GOAL -> RE-PRIORITIZE.
+
+        Returns tuple: (selected_goal, strategy_selection, agent_plan, execution_result)
+        """
+        logger = get_logger("AgentPlanner")
+
+        plan_tuple = self.plan_next_goal(
+            goal_manager=goal_manager,
+            prioritizer=prioritizer,
+            selector=selector,
+        )
+
+        if plan_tuple is None:
+            logger.info("No eligible persistent goals selected. Cycle completed with no action.")
+            return None, None, None, None
+
+        selected, selection, plan = plan_tuple
+
+        exec_result = executor.execute_plan(plan, registry=registry)
+
+        goal_manager.record_execution_outcome(
+            goal_id=selected.goal.goal_id,
+            plan=plan,
+            result=exec_result,
+        )
+
+        return selected, selection, plan, exec_result
+
     def create_plan(
         self,
         goal: AgentGoal | GoalModel | str,

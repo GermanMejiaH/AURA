@@ -1,6 +1,9 @@
+from typing import Any
+
 from aura.cognition.deliberation.models import RiskLevel
 from aura.events.bus import EventBus
 from aura.events.models import (
+    GoalOutcomeRecorded,
     GoalProgressUpdated,
     GoalStatusChanged,
     GoalUpdated,
@@ -191,3 +194,91 @@ class GoalManager:
     def delete_goal(self, goal_id: str) -> bool:
         """Physically deletes a PersistentGoal from the database."""
         return self.store.delete_goal(goal_id)
+
+    def record_execution_outcome(
+        self,
+        goal_id: str,
+        plan: Any | None = None,
+        result: Any | None = None,
+        status: GoalStatus | str | None = None,
+        progress_percentage: float | None = None,
+        reason: str = "",
+    ) -> PersistentGoal | None:
+        """Deterministically records execution outcome of an AgentPlan run on PersistentGoal."""
+        goal = self.store.get_goal(goal_id)
+        if not goal:
+            logger.warning(
+                f"PersistentGoal '{goal_id}' not found when recording execution outcome."
+            )
+            return None
+
+        # Terminal state idempotency check: do not overwrite terminal state unless explicitly forced
+        terminal_statuses = {GoalStatus.COMPLETED, GoalStatus.CANCELLED}
+        if goal.status in terminal_statuses:
+            logger.info(
+                f"PersistentGoal '{goal_id}' is already in terminal state '{goal.status.value}'. "
+                "Outcome recording skipped."
+            )
+            return goal
+
+        # Determine target status and progress from plan/result or explicit parameters
+        target_status = goal.status
+        target_progress = goal.progress.completion_percentage
+
+        if status is not None:
+            target_status = GoalStatus(status) if isinstance(status, str) else status
+        elif result is not None or plan is not None:
+            is_completed = getattr(result, "completed", False) or (
+                plan.is_completed() if plan else False
+            )
+            is_failed = getattr(result, "failed", False) or (plan.is_failed() if plan else False)
+            is_waiting = getattr(result, "waiting_confirmation", False) or (
+                plan.is_waiting_confirmation() if plan else False
+            )
+
+            if is_completed:
+                target_status = GoalStatus.COMPLETED
+                target_progress = 100.0
+            elif is_failed:
+                target_status = GoalStatus.FAILED
+            elif is_waiting:
+                target_status = GoalStatus.BLOCKED
+            elif plan and plan.tasks:
+                succeeded_tasks = sum(1 for t in plan.tasks if t.status.value == "SUCCESS")
+                total_tasks = len(plan.tasks)
+                if total_tasks > 0:
+                    calculated = round((succeeded_tasks / total_tasks) * 100.0, 1)
+                    target_progress = max(target_progress, calculated)
+                if target_progress >= 100.0:
+                    target_status = GoalStatus.COMPLETED
+                else:
+                    target_status = GoalStatus.ACTIVE
+
+        if progress_percentage is not None:
+            target_progress = max(0.0, min(100.0, float(progress_percentage)))
+            if target_progress >= 100.0 and target_status != GoalStatus.CANCELLED:
+                target_status = GoalStatus.COMPLETED
+
+        # Update progress and status safely
+        self.update_progress(goal_id, percentage=target_progress, notes=reason)
+        if goal.status != target_status:
+            self.set_status(goal_id, target_status)
+
+        updated_goal = self.store.get_goal(goal_id)
+
+        if self.event_bus and updated_goal:
+            plan_id = getattr(plan, "plan_id", "") if plan else getattr(result, "plan_id", "")
+            strat_id = getattr(plan, "strategy_id", None) if plan else None
+            self.event_bus.publish(
+                GoalOutcomeRecorded(
+                    goal_id=updated_goal.goal_id,
+                    plan_id=plan_id,
+                    status=updated_goal.status.value,
+                    completion_percentage=updated_goal.progress.completion_percentage,
+                    strategy_id=strat_id,
+                    reason=reason
+                    or f"Execution recorded with outcome '{updated_goal.status.value}'",
+                )
+            )
+
+        return updated_goal
