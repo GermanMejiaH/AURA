@@ -653,3 +653,30 @@ class GoalOutcomeRecorded(Event):
     strategy_id: str | None = None
     reason: str = ""
     __event_name__: ClassVar[str] = "GoalOutcomeRecorded"
+
+
+@dataclass(frozen=True)
+class ScheduleTriggered(Event):
+    schedule_id: str = ""
+    goal_id: str = ""
+    schedule_type: str = ""
+    triggered_at: str = ""
+    __event_name__: ClassVar[str] = "ScheduleTriggered"
+
+
+@dataclass(frozen=True)
+class ScheduleRunRecorded(Event):
+    schedule_id: str = ""
+    goal_id: str = ""
+    iterations_count: int = 0
+    next_run_at: str | None = None
+    status: str = ""
+    __event_name__: ClassVar[str] = "ScheduleRunRecorded"
+
+
+@dataclass(frozen=True)
+class ScheduleSkipped(Event):
+    schedule_id: str = ""
+    goal_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "ScheduleSkipped"
