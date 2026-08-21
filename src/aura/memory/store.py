@@ -193,6 +193,74 @@ class SQLiteMemoryStore(MemoryStore):
                     ON conversation_turns(session_id, timestamp)
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS proactive_tasks (
+                        task_id TEXT PRIMARY KEY,
+                        conversation_id TEXT NOT NULL,
+                        creation_turn_id TEXT NOT NULL,
+                        trigger_type TEXT NOT NULL,
+                        trigger_definition_json TEXT NOT NULL,
+                        action_proposal_json TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        next_evaluation_at TEXT,
+                        last_evaluation_at TEXT,
+                        execution_count INTEGER NOT NULL DEFAULT 0,
+                        max_executions INTEGER NOT NULL DEFAULT 1,
+                        expires_at TEXT,
+                        correlation_id TEXT NOT NULL,
+                        operation_id TEXT,
+                        last_execution_id TEXT,
+                        last_outcome_id TEXT,
+                        cancellation_reason TEXT,
+                        metadata_json TEXT NOT NULL DEFAULT '{}'
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_proactive_tasks_conv_status
+                    ON proactive_tasks(conversation_id, status)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS proactive_task_executions (
+                        execution_id TEXT PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        operation_id TEXT NOT NULL,
+                        executed_at TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        outcome_summary TEXT,
+                        error TEXT,
+                        FOREIGN KEY (task_id) REFERENCES proactive_tasks(task_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS proactive_notifications (
+                        notification_id TEXT PRIMARY KEY,
+                        task_id TEXT NOT NULL,
+                        conversation_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        success INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        delivered INTEGER NOT NULL DEFAULT 0,
+                        operation_id TEXT,
+                        metadata_json TEXT NOT NULL DEFAULT '{}'
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_proactive_notifications_conv
+                    ON proactive_notifications(conversation_id, delivered)
+                    """
+                )
             logger.info(f"SQLiteMemoryStore initialized at '{self.db_path}'")
 
         except Exception as exc:

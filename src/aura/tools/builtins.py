@@ -256,7 +256,7 @@ class SystemStatusTool(BaseTool):
 
     metadata = ToolMetadata(
         name="system_status_tool",
-        description="Retrieves AURA runtime system status, active modules, and health",
+        description="Retrieves AURA runtime status, active modules, health, and host metrics",
         category="system",
         risk_level="safe",
         requires_confirmation=False,
@@ -267,6 +267,12 @@ class SystemStatusTool(BaseTool):
         self.aura_instance = aura_instance
 
     def execute(self, **kwargs: Any) -> ToolResult:
+        base_status: dict[str, Any] = {
+            "state": "Running",
+            "is_running": True,
+            "health": "OK",
+        }
+
         if self.aura_instance is not None and hasattr(self.aura_instance, "state"):
             state_val = (
                 self.aura_instance.state.value
@@ -278,18 +284,23 @@ class SystemStatusTool(BaseTool):
                 if hasattr(self.aura_instance, "modules")
                 else []
             )
-            status_data = {
-                "state": state_val,
-                "is_running": getattr(self.aura_instance, "is_running", False),
-                "registered_modules": modules_list,
-            }
-            return ToolResult(success=True, output=status_data)
+            base_status.update(
+                {
+                    "state": state_val,
+                    "is_running": getattr(self.aura_instance, "is_running", False),
+                    "registered_modules": modules_list,
+                }
+            )
 
-        return ToolResult(
-            success=True,
-            output={
-                "state": "Running",
-                "is_running": True,
-                "health": "OK",
-            },
-        )
+        # Include real host metrics if requested or available
+        try:
+            from .system_observation import RealSystemObservationTool
+
+            obs_tool = RealSystemObservationTool()
+            obs_res = obs_tool.execute(action="all")
+            if obs_res.success and isinstance(obs_res.output, dict):
+                base_status["host_metrics"] = obs_res.output
+        except Exception:
+            pass
+
+        return ToolResult(success=True, output=base_status)

@@ -680,3 +680,578 @@ class ScheduleSkipped(Event):
     goal_id: str = ""
     reason: str = ""
     __event_name__: ClassVar[str] = "ScheduleSkipped"
+
+
+@dataclass(frozen=True)
+class RuntimeStarted(Event):
+    runtime_name: str = ""
+    tick_interval: float = 1.0
+    started_at: str = ""
+    __event_name__: ClassVar[str] = "RuntimeStarted"
+
+
+@dataclass(frozen=True)
+class RuntimeStopped(Event):
+    runtime_name: str = ""
+    tick_count: int = 0
+    stopped_at: str = ""
+    __event_name__: ClassVar[str] = "RuntimeStopped"
+
+
+@dataclass(frozen=True)
+class RuntimeTickCompleted(Event):
+    tick_index: int = 0
+    tick_timestamp: str = ""
+    dispatched_count: int = 0
+    __event_name__: ClassVar[str] = "RuntimeTickCompleted"
+
+
+@dataclass(frozen=True)
+class RuntimeTickFailed(Event):
+    tick_index: int = 0
+    tick_timestamp: str = ""
+    error: str = ""
+    __event_name__: ClassVar[str] = "RuntimeTickFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeHealthChanged(Event):
+    runtime_name: str = ""
+    previous_status: str = ""
+    new_status: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeHealthChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryAttempted(Event):
+    runtime_name: str = ""
+    attempt_number: int = 1
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeRecoveryAttempted"
+
+
+@dataclass(frozen=True)
+class RuntimeRecovered(Event):
+    runtime_name: str = ""
+    attempt_number: int = 1
+    recovered_at: str = ""
+    __event_name__: ClassVar[str] = "RuntimeRecovered"
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryFailed(Event):
+    runtime_name: str = ""
+    attempt_number: int = 1
+    reason: str = ""
+    recovery_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeRecoveryFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeWorkerLost(Event):
+    runtime_name: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeWorkerLost"
+
+
+@dataclass(frozen=True)
+class RuntimeWorkerRecovered(Event):
+    runtime_name: str = ""
+    attempt_number: int = 1
+    recovered_at: str = ""
+    __event_name__: ClassVar[str] = "RuntimeWorkerRecovered"
+
+
+@dataclass(frozen=True)
+class RuntimeDiagnosticSnapshotUpdated(Event):
+    runtime_name: str = ""
+    health_status: str = ""
+    __event_name__: ClassVar[str] = "RuntimeDiagnosticSnapshotUpdated"
+
+
+@dataclass(frozen=True)
+class RuntimePolicyChanged(Event):
+    runtime_name: str = ""
+    previous_activity_level: str = ""
+    new_activity_level: str = ""
+    effective_tick_interval: float = 1.0
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimePolicyChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeActivityLevelChanged(Event):
+    runtime_name: str = ""
+    previous_level: str = ""
+    new_level: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeActivityLevelChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeControlCommandIssued(Event):
+    command: str = ""
+    command_timestamp: str = ""
+    __event_name__: ClassVar[str] = "RuntimeControlCommandIssued"
+
+
+@dataclass(frozen=True)
+class RuntimeControlCommandCompleted(Event):
+    command: str = ""
+    success: bool = True
+    previous_state: str = ""
+    resulting_state: str = ""
+    __event_name__: ClassVar[str] = "RuntimeControlCommandCompleted"
+
+
+@dataclass(frozen=True)
+class RuntimeControlCommandFailed(Event):
+    command: str = ""
+    error: str = ""
+    previous_state: str = ""
+    __event_name__: ClassVar[str] = "RuntimeControlCommandFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeStateChanged(Event):
+    previous_state: str = ""
+    new_state: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeStateChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeStatePersisted(Event):
+    runtime_name: str = ""
+    operational_state: str = ""
+    clean_shutdown: bool = False
+    __event_name__: ClassVar[str] = "RuntimeStatePersisted"
+
+
+@dataclass(frozen=True)
+class RuntimeStateRestored(Event):
+    runtime_name: str = ""
+    restored_state: str = ""
+    clean_shutdown: bool = False
+    __event_name__: ClassVar[str] = "RuntimeStateRestored"
+
+
+@dataclass(frozen=True)
+class RuntimeUnexpectedShutdownDetected(Event):
+    runtime_name: str = ""
+    previous_state: str = ""
+    detected_at: str = ""
+    __event_name__: ClassVar[str] = "RuntimeUnexpectedShutdownDetected"
+
+
+@dataclass(frozen=True)
+class RuntimePostBootRecoveryAttempted(Event):
+    runtime_name: str = ""
+    previous_state: str = ""
+    recovery_action: str = ""
+    success: bool = True
+    __event_name__: ClassVar[str] = "RuntimePostBootRecoveryAttempted"
+
+
+@dataclass(frozen=True)
+class AutonomyScopeChanged(Event):
+    runtime_name: str = ""
+    previous_scope: str = ""
+    new_scope: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "AutonomyScopeChanged"
+
+
+@dataclass(frozen=True)
+class CircuitBreakerTripped(Event):
+    target_id: str = ""
+    failure_count: int = 0
+    cooloff_seconds: float = 60.0
+    reason: str = ""
+    __event_name__: ClassVar[str] = "CircuitBreakerTripped"
+
+
+@dataclass(frozen=True)
+class CircuitBreakerReset(Event):
+    target_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "CircuitBreakerReset"
+
+
+@dataclass(frozen=True)
+class GovernanceExecutionBlocked(Event):
+    action_id: str = ""
+    reason: str = ""
+    scope: str = ""
+    circuit_state: str = ""
+    __event_name__: ClassVar[str] = "GovernanceExecutionBlocked"
+
+
+@dataclass(frozen=True)
+class RuntimePolicyDecisionMade(Event):
+    task_id: str = ""
+    action: str = ""
+    reason: str = ""
+    effective_priority: float = 0.0
+    decision_timestamp: str = ""
+    __event_name__: ClassVar[str] = "RuntimePolicyDecisionMade"
+
+
+@dataclass(frozen=True)
+class RuntimePolicyConflictDetected(Event):
+    conflict_id: str = ""
+    conflict_type: str = ""
+    winning_task_id: str = ""
+    losing_task_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimePolicyConflictDetected"
+
+
+@dataclass(frozen=True)
+class RuntimeTaskDeferred(Event):
+    task_id: str = ""
+    reason: str = ""
+    effective_priority: float = 0.0
+    __event_name__: ClassVar[str] = "RuntimeTaskDeferred"
+
+
+@dataclass(frozen=True)
+class RuntimeTaskCancelled(Event):
+    task_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeTaskCancelled"
+
+
+@dataclass(frozen=True)
+class RuntimeTaskPriorityChanged(Event):
+    task_id: str = ""
+    previous_priority: float = 0.0
+    new_priority: float = 0.0
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeTaskPriorityChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionStarted(Event):
+    execution_id: str = ""
+    goal_id: str = ""
+    schedule_id: str = ""
+    idempotency_key: str = ""
+    attempt_number: int = 1
+    __event_name__: ClassVar[str] = "RuntimeExecutionStarted"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionValidated(Event):
+    execution_id: str = ""
+    goal_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionValidated"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionCompleted(Event):
+    execution_id: str = ""
+    goal_id: str = ""
+    state: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionCompleted"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionFailed(Event):
+    execution_id: str = ""
+    goal_id: str = ""
+    error: str = ""
+    failure_type: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionRetrying(Event):
+    execution_id: str = ""
+    attempt_number: int = 1
+    max_attempts: int = 3
+    error: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionRetrying"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionRolledBack(Event):
+    execution_id: str = ""
+    reason: str = ""
+    success: bool = True
+    __event_name__: ClassVar[str] = "RuntimeExecutionRolledBack"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionCompensating(Event):
+    execution_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionCompensating"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionCompensated(Event):
+    execution_id: str = ""
+    reason: str = ""
+    success: bool = True
+    __event_name__: ClassVar[str] = "RuntimeExecutionCompensated"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionCancelled(Event):
+    execution_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExecutionCancelled"
+
+
+@dataclass(frozen=True)
+class RuntimeExecutionTimedOut(Event):
+    execution_id: str = ""
+    timeout_seconds: float = 0.0
+    __event_name__: ClassVar[str] = "RuntimeExecutionTimedOut"
+
+
+@dataclass(frozen=True)
+class RuntimeOutcomeRecorded(Event):
+    execution_id: str = ""
+    action_id: str = ""
+    outcome_type: str = ""
+    success: bool = True
+    __event_name__: ClassVar[str] = "RuntimeOutcomeRecorded"
+
+
+@dataclass(frozen=True)
+class RuntimeExperienceUpdated(Event):
+    action_id: str = ""
+    total_executions: int = 0
+    success_rate: float = 0.0
+    confidence: str = ""
+    __event_name__: ClassVar[str] = "RuntimeExperienceUpdated"
+
+
+@dataclass(frozen=True)
+class RuntimeRecommendationGenerated(Event):
+    action_id: str = ""
+    recommendation_type: str = ""
+    confidence: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeRecommendationGenerated"
+
+
+@dataclass(frozen=True)
+class RuntimeFailurePatternDetected(Event):
+    action_id: str = ""
+    pattern_type: str = ""
+    details: str = ""
+    __event_name__: ClassVar[str] = "RuntimeFailurePatternDetected"
+
+
+@dataclass(frozen=True)
+class RuntimeOperatorReviewRecommended(Event):
+    action_id: str = ""
+    reason: str = ""
+    consecutive_failures: int = 0
+    failure_rate: float = 0.0
+    __event_name__: ClassVar[str] = "RuntimeOperatorReviewRecommended"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationProposed(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    adaptation_type: str = ""
+    proposed_value: str = ""
+    requires_operator_approval: bool = True
+    __event_name__: ClassVar[str] = "RuntimeAdaptationProposed"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationValidationPassed(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationValidationPassed"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationValidationFailed(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    violations: list[str] = field(default_factory=list)
+    __event_name__: ClassVar[str] = "RuntimeAdaptationValidationFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationApproved(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    operator_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationApproved"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationRejected(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    operator_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationRejected"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationApplied(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    applied_value: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationApplied"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationRolledBack(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    restored_value: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationRolledBack"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationExpired(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationExpired"
+
+
+@dataclass(frozen=True)
+class RuntimeAdaptationBlocked(Event):
+    proposal_id: str = ""
+    action_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAdaptationBlocked"
+
+
+@dataclass(frozen=True)
+class RuntimeHealthStatusChanged(Event):
+    previous_status: str = ""
+    new_status: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeHealthStatusChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeInvariantViolationDetected(Event):
+    violation_id: str = ""
+    invariant_id: str = ""
+    severity: str = ""
+    component: str = ""
+    description: str = ""
+    __event_name__: ClassVar[str] = "RuntimeInvariantViolationDetected"
+
+
+@dataclass(frozen=True)
+class RuntimeAuditRecorded(Event):
+    audit_id: str = ""
+    correlation_id: str = ""
+    component: str = ""
+    stage: str = ""
+    event_type: str = ""
+    severity: str = ""
+    __event_name__: ClassVar[str] = "RuntimeAuditRecorded"
+
+
+@dataclass(frozen=True)
+class RuntimeCheckpointCreated(Event):
+    checkpoint_id: str = ""
+    reason: str = ""
+    event_timestamp: str = ""
+    __event_name__: ClassVar[str] = "RuntimeCheckpointCreated"
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryStarted(Event):
+    recovery_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeRecoveryStarted"
+
+
+@dataclass(frozen=True)
+class RuntimeRecoveryCompleted(Event):
+    recovery_id: str = ""
+    restored_components: tuple[str, ...] = ()
+    __event_name__: ClassVar[str] = "RuntimeRecoveryCompleted"
+
+
+@dataclass(frozen=True)
+class RuntimeSafeModeEntered(Event):
+    reason: str = ""
+    event_timestamp: str = ""
+    __event_name__: ClassVar[str] = "RuntimeSafeModeEntered"
+
+
+@dataclass(frozen=True)
+class RuntimeSafeModeExited(Event):
+    reason: str = ""
+    event_timestamp: str = ""
+    __event_name__: ClassVar[str] = "RuntimeSafeModeExited"
+
+
+@dataclass(frozen=True)
+class RuntimeComponentDegraded(Event):
+    component: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeComponentDegraded"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationStarted(Event):
+    operation_id: str = ""
+    correlation_id: str = ""
+    goal_id: str = ""
+    action_id: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationStarted"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationStateChanged(Event):
+    operation_id: str = ""
+    previous_state: str = ""
+    new_state: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationStateChanged"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationCompleted(Event):
+    operation_id: str = ""
+    execution_id: str = ""
+    duration: float = 0.0
+    __event_name__: ClassVar[str] = "RuntimeOperationCompleted"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationFailed(Event):
+    operation_id: str = ""
+    reason: str = ""
+    failure_type: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationFailed"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationCancelled(Event):
+    operation_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationCancelled"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationBlocked(Event):
+    operation_id: str = ""
+    reason: str = ""
+    blocking_stage: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationBlocked"
+
+
+@dataclass(frozen=True)
+class RuntimeOperationRecoveryRequired(Event):
+    operation_id: str = ""
+    reason: str = ""
+    __event_name__: ClassVar[str] = "RuntimeOperationRecoveryRequired"

@@ -16,7 +16,10 @@ from .builtins import (
     SpotifyTool,
     SystemStatusTool,
 )
+from .http_retrieval_tool import RealHTTPRetrievalTool
 from .registry import ToolRegistry
+from .sandboxed_file_tool import RealSandboxedFileTool
+from .system_observation import RealSystemObservationTool
 
 
 class ToolsModule(BaseModule):
@@ -49,6 +52,9 @@ class ToolsModule(BaseModule):
         self.registry.register(DateTimeTool())
         self.registry.register(CalculatorTool())
         self.registry.register(SystemStatusTool())
+        self.registry.register(RealSystemObservationTool())
+        self.registry.register(RealSandboxedFileTool())
+        self.registry.register(RealHTTPRetrievalTool())
 
         # Register IoC instances
         if self._container is not None:

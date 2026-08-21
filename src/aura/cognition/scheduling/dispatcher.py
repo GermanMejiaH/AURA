@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from aura.autonomy.planner import AgentPlanner
     from aura.tools.registry import ToolRegistry
 
+    from .execution import RuntimeExecutionEngine
+    from .governance import RuntimeGovernanceEngine
+    from .resolution import RuntimePolicyEngine
+
 logger = get_logger("ScheduleDispatcher")
 
 
@@ -51,6 +55,9 @@ class ScheduleDispatcher:
         planner: AgentPlanner | None = None,
         executor: AgentExecutor | None = None,
         registry: ToolRegistry | None = None,
+        governance_engine: RuntimeGovernanceEngine | None = None,
+        policy_engine: RuntimePolicyEngine | None = None,
+        execution_engine: RuntimeExecutionEngine | None = None,
     ) -> None:
         self.schedule_store = schedule_store
         self.goal_manager = goal_manager
@@ -59,6 +66,9 @@ class ScheduleDispatcher:
         self.planner = planner
         self.executor = executor
         self.registry = registry
+        self.governance_engine = governance_engine
+        self.policy_engine = policy_engine
+        self.execution_engine = execution_engine
         self._active_dispatches: set[str] = set()
 
     def process_due_schedules(
@@ -111,6 +121,7 @@ class ScheduleDispatcher:
             )
 
         self._active_dispatches.add(sched.schedule_id)
+        execution_error: Exception | None = None
         try:
             # 2. Re-evaluate eligibility via ScheduleEvaluator
             eval_res = self.evaluator.evaluate_eligibility(sched, at_timestamp=now_iso)
@@ -165,6 +176,61 @@ class ScheduleDispatcher:
                     reason=reason,
                 )
 
+            # 3.4 Runtime Policy & Priority Evaluation
+            if self.policy_engine is not None:
+                pol_dec = self.policy_engine.evaluate_schedule(sched, goal=goal)
+                if not pol_dec.allowed:
+                    reason = (
+                        f"Policy blocked/deferred execution: "
+                        f"{pol_dec.action.value} ({pol_dec.reason})"
+                    )
+                    if self.event_bus:
+                        self.event_bus.publish(
+                            ScheduleSkipped(
+                                schedule_id=sched.schedule_id,
+                                goal_id=sched.goal_id,
+                                reason=reason,
+                            )
+                        )
+                    return DispatchResult(
+                        schedule_id=sched.schedule_id,
+                        goal_id=sched.goal_id,
+                        dispatched=False,
+                        status=sched.status,
+                        iterations_count=sched.iterations_count,
+                        last_run_at=sched.last_run_at,
+                        next_run_at=sched.next_run_at,
+                        reason=reason,
+                    )
+
+            # 3.5 Governance & Safeguard Evaluation
+            if self.governance_engine is not None:
+                gov_dec = self.governance_engine.evaluate_action(
+                    action_id=sched.schedule_id,
+                    is_mutating=True,
+                    category="AUTONOMY",
+                )
+                if not gov_dec.allowed:
+                    reason = f"Governance blocked execution: {gov_dec.reason}"
+                    if self.event_bus:
+                        self.event_bus.publish(
+                            ScheduleSkipped(
+                                schedule_id=sched.schedule_id,
+                                goal_id=sched.goal_id,
+                                reason=reason,
+                            )
+                        )
+                    return DispatchResult(
+                        schedule_id=sched.schedule_id,
+                        goal_id=sched.goal_id,
+                        dispatched=False,
+                        status=sched.status,
+                        iterations_count=sched.iterations_count,
+                        last_run_at=sched.last_run_at,
+                        next_run_at=sched.next_run_at,
+                        reason=reason,
+                    )
+
             # 4. Dry-run mode check
             if not execute_goals:
                 reason = "Dry run / simulation mode"
@@ -198,37 +264,61 @@ class ScheduleDispatcher:
                     )
                 )
 
-            plan: Any | None = None
-            result: Any | None = None
-            execution_error: Exception | None = None
+            execution_error = None
 
-            try:
+            def _run_goal_cycle() -> Any:
+                plan_inner: Any | None = None
+                result_inner: Any | None = None
                 goal_model = goal.to_goal_model()
                 if self.planner:
                     try:
-                        _, plan = self.planner.deliberate_and_plan(goal_model)
+                        _, plan_inner = self.planner.deliberate_and_plan(goal_model)
                     except AttributeError:
-                        plan = self.planner.create_plan(goal_model)
+                        plan_inner = self.planner.create_plan(goal_model)
 
-                    if plan and self.executor:
-                        result = self.executor.execute_plan(plan, registry=self.registry)
+                    if plan_inner and self.executor:
+                        result_inner = self.executor.execute_plan(
+                            plan_inner, registry=self.registry
+                        )
 
                 self.goal_manager.record_execution_outcome(
                     goal_id=goal.goal_id,
-                    plan=plan,
-                    result=result,
+                    plan=plan_inner,
+                    result=result_inner,
                     reason=f"Executed via TemporalSchedule '{sched.schedule_id}'",
                 )
-            except Exception as exc:
-                execution_error = exc
-                logger.error(
-                    f"Execution failed for goal '{goal.goal_id}' "
-                    f"on schedule '{sched.schedule_id}': {exc}"
+                return result_inner
+
+            if self.execution_engine is not None:
+                exec_res = self.execution_engine.execute_schedule_action(
+                    sched=sched,
+                    goal=goal,
+                    goal_executor_fn=_run_goal_cycle,
                 )
-                self.goal_manager.record_execution_outcome(
-                    goal_id=goal.goal_id,
-                    status=GoalStatus.FAILED,
-                    reason=f"Schedule execution failed: {exc}",
+                if not exec_res.success:
+                    execution_error = RuntimeError(
+                        exec_res.error or "Transactional execution failed"
+                    )
+            else:
+                try:
+                    _run_goal_cycle()
+                except Exception as exc:
+                    execution_error = exc
+                    logger.error(
+                        f"Execution failed for goal '{goal.goal_id}' "
+                        f"on schedule '{sched.schedule_id}': {exc}"
+                    )
+                    self.goal_manager.record_execution_outcome(
+                        goal_id=goal.goal_id,
+                        status=GoalStatus.FAILED,
+                        reason=f"Schedule execution failed: {exc}",
+                    )
+
+            if self.governance_engine is not None:
+                self.governance_engine.record_action_outcome(
+                    action_id=sched.schedule_id,
+                    success=(execution_error is None),
+                    error=str(execution_error) if execution_error else None,
                 )
 
             # 6. Record run and persist schedule update
@@ -264,4 +354,8 @@ class ScheduleDispatcher:
                 reason=dispatch_reason,
             )
         finally:
+            if self.policy_engine is not None:
+                self.policy_engine.record_task_completion(
+                    sched.schedule_id, success=(execution_error is None)
+                )
             self._active_dispatches.discard(sched.schedule_id)

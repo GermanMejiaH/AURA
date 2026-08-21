@@ -1,5 +1,10 @@
 from .action_coordinator import ActionCoordinator, ActionResult
 from .attention import AttentionItem, AttentionLevel, AttentionManager
+from .cognitive_contract import (
+    CognitiveMode,
+    CognitiveTurnInterpretation,
+    ToolCallProposal,
+)
 from .context import CognitiveContext, CognitiveContextBuilder
 from .conversation_context import (
     AnaphoraResolution,
@@ -40,9 +45,11 @@ __all__ = [
     "CognitionModule",
     "CognitiveContext",
     "CognitiveContextBuilder",
+    "CognitiveMode",
     "CognitiveReflector",
     "CognitiveState",
     "CognitiveStateMachine",
+    "CognitiveTurnInterpretation",
     "ConversationContext",
     "ConversationContextFilter",
     "Decision",
@@ -70,6 +77,7 @@ __all__ = [
     "SessionContext",
     "SessionManager",
     "TaskEvaluator",
+    "ToolCallProposal",
     "ToolOrchestrator",
     "VerificationResult",
     "VerificationStatus",
