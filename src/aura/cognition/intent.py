@@ -194,6 +194,11 @@ class IntentDetector:
         r"\bcu[aá]ndo\s+cumplo\b",
         r"\bqu[eé]\s+d[ií]a\s+cumplo\b",
         r"\brecuerdas\s+mi\b",
+        r"\bqu[eé]\s+recuerdas\b",
+        r"\bqu[eé]\s+sabes(?:\s+(?:de|sobre))?\b",
+        r"\bqui[eé]n\s+soy\b",
+        r"\bh[aá]blame\s+de\s+m[ií]\b",
+        r"\bqu[eé]\s+conoces(?:\s+(?:de|sobre))?\b",
     )
 
     GREETING_PATTERNS = (

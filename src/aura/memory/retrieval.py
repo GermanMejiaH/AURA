@@ -6,7 +6,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .models import Episode, Fact, MemoryQueryResult, Preference
 from .store import SQLiteMemoryStore
@@ -157,6 +157,16 @@ class MemoryRetrievalEngine:
     W_TOKEN_OVERLAP = 0.5
     W_SUBJECT_MATCH = 0.3
 
+    OPEN_RECALL_PATTERNS: ClassVar[tuple[str, ...]] = (
+        r"\brecuerdas\b",
+        r"\bsabes(?:\s+(?:de|sobre))?\b",
+        r"\bqui[eé]n\s+soy\b",
+        r"\bh[aá]blame\s+de\s+m[ií]\b",
+        r"\bqu[eé]\s+conoces\b",
+        r"\bdatos\b",
+        r"\binformaci[oó]n\b",
+    )
+
     def __init__(
         self,
         episodic: EpisodicMemory,
@@ -173,7 +183,12 @@ class MemoryRetrievalEngine:
         norm = normalize_text(search_text)
         return {w for w in norm.split() if len(w) >= 2}
 
-    def score_fact(self, fact: Fact, query_tokens: set[str]) -> float:
+    @classmethod
+    def _is_open_recall_query(cls, search_text: str, query_tokens: set[str]) -> bool:
+        norm = normalize_text(search_text)
+        return any(re.search(pat, norm, re.IGNORECASE) for pat in cls.OPEN_RECALL_PATTERNS)
+
+    def score_fact(self, fact: Fact, query_tokens: set[str], is_open_recall: bool = False) -> float:
         norm_pred = normalize_text(fact.predicate)
         norm_obj = normalize_text(fact.object_val)
         norm_subj = normalize_text(fact.subject)
@@ -197,15 +212,20 @@ class MemoryRetrievalEngine:
         if overlap:
             score += self.W_TOKEN_OVERLAP * (len(overlap) / max(len(query_tokens), 1))
 
-        if score > 0 and (
+        # Unconditional evaluation of subject match (independent of predicate match)
+        personal_tokens = {"yo", "soy", "mi", "mis", "mio", "mía", "mia", "usuario"}
+        if (
             norm_subj in query_tokens
-            or any(t in ("yo", "mi", "mis", "mio", "usuario") for t in query_tokens)
+            or query_tokens.intersection(personal_tokens)
+            or is_open_recall
         ):
             score += self.W_SUBJECT_MATCH
 
         return score * fact.confidence
 
-    def score_preference(self, pref: Preference, query_tokens: set[str]) -> float:
+    def score_preference(
+        self, pref: Preference, query_tokens: set[str], is_open_recall: bool = False
+    ) -> float:
         from .canonicalization import canonicalize_key
 
         canon_k = canonicalize_key(pref.key)
@@ -226,15 +246,21 @@ class MemoryRetrievalEngine:
         if overlap:
             score += self.W_TOKEN_OVERLAP * (len(overlap) / max(len(query_tokens), 1))
 
+        # Unconditional evaluation of personal/user match for preferences
+        personal_tokens = {"yo", "soy", "mi", "mis", "mio", "mía", "mia", "usuario"}
+        if query_tokens.intersection(personal_tokens) or is_open_recall:
+            score += self.W_SUBJECT_MATCH
+
         return score
 
     def query(self, search_text: str, limit: int = 5) -> MemoryQueryResult:
         query_tokens = self._get_query_tokens(search_text)
+        is_open = self._is_open_recall_query(search_text, query_tokens)
 
         all_facts = self.semantic.all_facts()
         fact_scores: list[tuple[float, Fact]] = []
         for f in all_facts:
-            s = self.score_fact(f, query_tokens)
+            s = self.score_fact(f, query_tokens, is_open_recall=is_open)
             if s > 0.1:
                 fact_scores.append((s, f))
 
@@ -242,16 +268,31 @@ class MemoryRetrievalEngine:
             key=lambda x: (x[0], x[1].created_at if hasattr(x[1], "created_at") else 0),
             reverse=True,
         )
+
+        # If a strong predicate/concept match exists, suppress generic subject-only noise
+        max_fact_score = fact_scores[0][0] if fact_scores else 0.0
+        if max_fact_score >= self.W_CONCEPT_ALIAS and not is_open:
+            fact_scores = [
+                item for item in fact_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)
+            ]
+
         matched_facts = [f for _, f in fact_scores[:limit]]
 
         all_prefs = self.preferences.all_preferences()
         pref_scores: list[tuple[float, Preference]] = []
         for p in all_prefs:
-            s = self.score_preference(p, query_tokens)
+            s = self.score_preference(p, query_tokens, is_open_recall=is_open)
             if s > 0.1:
                 pref_scores.append((s, p))
 
         pref_scores.sort(key=lambda x: x[0], reverse=True)
+
+        max_pref_score = pref_scores[0][0] if pref_scores else 0.0
+        if max_pref_score >= self.W_CONCEPT_ALIAS and not is_open:
+            pref_scores = [
+                item for item in pref_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)
+            ]
+
         matched_prefs = [p for _, p in pref_scores[:limit]]
 
         episodes = self.episodic.search_episodes(search_text, limit=limit)
