@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import threading
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 from .models import InteractionRecord, LatencyMetric
 
@@ -191,3 +194,43 @@ class TelemetryManager:
             "===================================",
         ]
         return "\n".join(lines)
+
+    def export_snapshot(self, filepath: str | Path | None = None) -> dict[str, Any]:
+        """Exports current TelemetryManager metrics to a JSON snapshot file."""
+        import json
+
+        with self._lock:
+            ts_str = datetime.now(UTC).isoformat()
+            latencies_dict = {}
+            for name, m in self._latencies.items():
+                latencies_dict[name] = {
+                    "count": m.count,
+                    "total_ms": round(m.total_ms, 2),
+                    "avg_ms": round(m.avg_ms, 2),
+                    "min_ms": round(m.min_ms, 2) if m.min_ms != float("inf") else 0.0,
+                    "max_ms": round(m.max_ms, 2),
+                }
+
+            snapshot_data: dict[str, Any] = {
+                "timestamp": ts_str,
+                "counters": dict(self._counters),
+                "latencies": latencies_dict,
+                "recent_interactions_count": len(self._interactions),
+            }
+
+        if filepath is None:
+            ts_compact = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            target_path = (
+                Path("diagnostics")
+                / "telemetry_snapshots"
+                / f"telemetry_snapshot_{ts_compact}.json"
+            )
+        else:
+            target_path = Path(filepath)
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(snapshot_data, f, indent=2, ensure_ascii=False)
+
+        return snapshot_data

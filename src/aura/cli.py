@@ -125,6 +125,8 @@ def run_interactive_cli() -> int:
                 _handle_robotics(aura, arg)
             elif cmd in ("stats", "metrics", "telemetry"):
                 _handle_stats(aura)
+            elif cmd in ("benchmark", "bench"):
+                _handle_benchmark(aura)
             else:
                 print(f"Comando desconocido '{cmd}'. Escribe 'help' para la lista de comandos.")
     finally:
@@ -626,6 +628,81 @@ def _handle_robotics(aura: AURA, arg: str) -> None:
         print(f"  • Posición Espacial Actual: (x={pos.x}, y={pos.y}, z={pos.z})")
 
 
+def _handle_benchmark(aura: AURA) -> None:
+    from aura.telemetry import TelemetryManager
+
+    tm = TelemetryManager.get_instance()
+    all_counters = tm.get_all_counters()
+    all_latencies = tm.get_all_latencies()
+
+    avg_stt = round(all_latencies["time_stt_ms"].avg_ms) if "time_stt_ms" in all_latencies else 0
+    avg_cog = (
+        round(all_latencies["time_cognition_ms"].avg_ms)
+        if "time_cognition_ms" in all_latencies
+        else 0
+    )
+    avg_llm = round(all_latencies["time_llm_ms"].avg_ms) if "time_llm_ms" in all_latencies else 0
+    avg_turn = round(all_latencies["time_turn_ms"].avg_ms) if "time_turn_ms" in all_latencies else 0
+
+    llm_total = all_counters.get("llm_calls_total", 0)
+    fp_greetings = all_counters.get("fastpath_greetings", 0)
+    fp_memory = all_counters.get("fastpath_memory_queries", 0)
+    fp_exit = all_counters.get("fastpath_exit_commands", 0)
+    fp_total = fp_greetings + fp_memory + fp_exit
+
+    interactions = len(tm.get_recent_interactions())
+    turn_count = max(
+        1,
+        all_latencies["time_turn_ms"].count if "time_turn_ms" in all_latencies else interactions,
+    )
+
+    fp_hit_rate = round((fp_total / turn_count) * 100.0, 1)
+    llm_per_turn = round(llm_total / turn_count, 2)
+
+    mem_reads = all_counters.get("memory_retrievals", 0)
+    mem_writes = all_counters.get("memory_writes", 0)
+    autonomy_cycles = all_counters.get("autonomy_cycles", 0)
+
+    mem_success_rate = 100.0 if mem_reads > 0 else 0.0
+
+    print("===================================")
+    print("AURA BENCHMARK REPORT")
+    print("===================================")
+    print(f"Average STT Latency:       {avg_stt} ms")
+    print(f"Average Cognition Latency:  {avg_cog} ms")
+    print(f"Average LLM Latency:      {avg_llm} ms")
+    print(f"Average Turn Latency:     {avg_turn} ms")
+    print("")
+    print(f"FastPath Hit Rate:        {fp_hit_rate:.1f}%")
+    print(f"LLM Calls per Turn:       {llm_per_turn:.2f}")
+    print(f"Memory Retrieval Success: {mem_success_rate:.1f}%")
+    print("")
+    print(f"Total Interactions:       {interactions}")
+    print(f"Total LLM Calls:          {llm_total}")
+    print(f"Total FastPaths:          {fp_total}")
+    print(f"Memory Writes:            {mem_writes}")
+    print(f"Memory Reads:             {mem_reads}")
+    print(f"Autonomy Cycles:          {autonomy_cycles}")
+    print("===================================")
+
+
+def run_benchmark_mode() -> int:
+    """Runs AURA benchmark suite, exports snapshot & report, and prints metrics."""
+    options = AURABootOptions(enable_audio=False, enable_vision=False)
+    aura = AURA(options=options)
+    aura.boot()
+    try:
+        from aura.telemetry import TelemetryManager, generate_runtime_report
+
+        _handle_benchmark(aura)
+        tm = TelemetryManager.get_instance()
+        tm.export_snapshot()
+        generate_runtime_report()
+    finally:
+        aura.shutdown(wait=True)
+    return 0
+
+
 def run_voice_cli() -> int:
     """Runs AURA 0.2 controlled real voice interaction mode (Push-to-Talk)."""
     print(
@@ -748,7 +825,12 @@ def main() -> int:
     parser.add_argument(
         "--voice", "-v", action="store_true", default=False, help="Run AURA 0.2 real voice mode"
     )
+    parser.add_argument(
+        "--benchmark", "-b", action="store_true", default=False, help="Run AURA benchmark suite"
+    )
     args = parser.parse_args()
+    if args.benchmark:
+        return run_benchmark_mode()
     if args.voice:
         return run_voice_cli()
     return run_interactive_cli()
