@@ -229,3 +229,70 @@ def test_retrieval_to_cognitive_context_format(tmp_path: Path) -> None:
     assert "2 de agosto" in sys_prompt
 
     aura.shutdown(wait=True)
+
+
+def test_strict_relevance_threshold_memory_retrieval(tmp_path: Path) -> None:
+    """Verifies that facts and preferences are ONLY retrieved when score > 0.1,
+    even when total database count is <= 3."""
+    db_file = str(tmp_path / "test_strict_rel.db")
+    store = SQLiteMemoryStore(db_path=db_file)
+    bus = EventBus()
+
+    episodic = EpisodicMemory(event_bus=bus, store=store)
+    semantic = SemanticMemory(event_bus=bus, store=store)
+    prefs = UserPreferencesMemory(event_bus=bus, store=store)
+
+    engine = MemoryRetrievalEngine(
+        episodic=episodic,
+        semantic=semantic,
+        preferences=prefs,
+        event_bus=bus,
+    )
+
+    # 1. Empty memory returns no facts or preferences
+    empty_res = engine.query("Que de ahí se te oyen.")
+    assert len(empty_res.facts) == 0
+    assert len(empty_res.preferences) == 0
+
+    # 2. Add 2 facts and 2 preferences (count <= 3)
+    semantic.add_fact(
+        Fact(
+            subject="usuario",
+            predicate="color_favorito",
+            object_val="azul",
+        )
+    )
+    semantic.add_fact(
+        Fact(
+            subject="usuario",
+            predicate="cumpleaños",
+            object_val="15 de marzo",
+        )
+    )
+    prefs.set_preference("speech_language", "es", category="settings")
+    prefs.set_preference("audio_device", "C920", category="audio")
+
+    assert len(semantic.all_facts()) == 2
+    assert len(prefs.all_preferences()) == 2
+
+    # 3. Irrelevant query: MUST NOT return any facts or preferences
+    irrelevant_query = "Que de ahí se te oyen."
+    res_irrelevant = engine.query(irrelevant_query)
+    assert len(res_irrelevant.facts) == 0, f"Expected 0 facts, got: {res_irrelevant.facts}"
+    assert len(res_irrelevant.preferences) == 0, (
+        f"Expected 0 preferences, got: {res_irrelevant.preferences}"
+    )
+
+    # 4. Relevant fact query: MUST return matching fact
+    res_color = engine.query("¿Cuál es mi color favorito?")
+    assert len(res_color.facts) == 1
+    assert res_color.facts[0].predicate == "color_favorito"
+    assert res_color.facts[0].object_val == "azul"
+
+    # 5. Relevant preference query: MUST return matching preference
+    res_pref = engine.query("audio_device")
+    assert len(res_pref.preferences) == 1
+    assert res_pref.preferences[0].key == "audio_device"
+    assert res_pref.preferences[0].value == "C920"
+
+    store.close()

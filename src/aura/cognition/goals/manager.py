@@ -29,8 +29,9 @@ class GoalManager:
         self,
         store: GoalStore | None = None,
         event_bus: EventBus | None = None,
+        container: Any | None = None,
     ) -> None:
-        self.store = store if store is not None else GoalStore()
+        self.store = store if store is not None else GoalStore(container=container)
         self.event_bus = event_bus
 
     def create_goal(

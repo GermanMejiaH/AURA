@@ -30,8 +30,20 @@ logger = get_logger("ProactiveTaskStore")
 class ProactiveTaskStore:
     """Thread-safe SQLite store for persisting proactive tasks and notifications."""
 
-    def __init__(self, store: SQLiteMemoryStore | None = None) -> None:
-        self.store = store or SQLiteMemoryStore(db_path=":memory:")
+    def __init__(
+        self,
+        store: SQLiteMemoryStore | None = None,
+        container: Any | None = None,
+        db_path: str = ":memory:",
+    ) -> None:
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
         self._lock = threading.RLock()
 
     def _get_conn(self) -> sqlite3.Connection:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..events import EventBus
@@ -22,7 +22,11 @@ class AutonomousGoal:
 class GoalManager:
     """Manages high-level autonomous goal lifecycle, tracking & status updates."""
 
-    def __init__(self, event_bus: EventBus | None = None) -> None:
+    def __init__(
+        self,
+        event_bus: EventBus | None = None,
+        container: Any | None = None,
+    ) -> None:
         self.event_bus = event_bus
         self._goals: dict[str, AutonomousGoal] = {}
 

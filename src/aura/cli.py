@@ -121,8 +121,10 @@ def run_interactive_cli() -> int:
                 _handle_goal(aura, arg)
             elif cmd == "nav":
                 _handle_nav(aura, arg)
-            elif cmd == "robotics":
+            elif cmd in ("robotics",):
                 _handle_robotics(aura, arg)
+            elif cmd in ("stats", "metrics", "telemetry"):
+                _handle_stats(aura)
             else:
                 print(f"Comando desconocido '{cmd}'. Escribe 'help' para la lista de comandos.")
     finally:
@@ -134,6 +136,7 @@ def run_interactive_cli() -> int:
 def _print_help() -> None:
     print("\nComandos de la Interfaz AURA:")
     print("  • status                 - Estado del sistema, uptime y salud de los 8 módulos")
+    print("  • stats                  - Muestra el informe completo de rendimiento y telemetría")
     print("  • cognition [prompt]     - Estado cognitivo, memoria de trabajo y decisiones")
     print("  • memory [query|add]     - Estado de memoria (episódica, semántica, preferencias)")
     print("  • cwm [list|add|query]   - Consulta y manipula entidades del Cognitive World Model")
@@ -169,6 +172,17 @@ def _handle_status(aura: AURA, start_time: float) -> None:
                 f"  • {name:<12} | Prioridad: {m.priority:<2} | "
                 f"Estado: {h.status.value:<8} | Diagnóstico: {err_info}"
             )
+
+
+def _handle_stats(aura: AURA) -> None:
+    from aura.telemetry import TelemetryManager
+
+    tm = (
+        aura.telemetry
+        if hasattr(aura, "telemetry") and aura.telemetry
+        else TelemetryManager.get_instance()
+    )
+    print("\n" + tm.get_performance_report())
 
 
 def _handle_cognition(aura: AURA, arg: str) -> None:
@@ -423,7 +437,7 @@ def _handle_converse(aura: AURA, arg: str) -> None:
     llm: LLMProvider
     if os.environ.get("GROQ_API_KEY"):
         llm = OpenAILLMProvider()
-        print("  🧠 Motor LLM: Groq Cloud (Llama 3.3 70B Real) Activo")
+        print("  🧠 Motor LLM: Groq Cloud (Compound Real) Activo")
     elif os.environ.get("OPENROUTER_API_KEY"):
         llm = OpenAILLMProvider()
         print("  🧠 Motor LLM: OpenRouter Real Activo")
@@ -432,11 +446,17 @@ def _handle_converse(aura: AURA, arg: str) -> None:
         print("  🧠 Motor LLM: OpenAI Real Activo")
     elif has_valid_gemini:
         llm = GeminiLLMProvider()
-        print("  🧠 Motor LLM: Gemini Real Activo")
     else:
         llm = OpenAILLMProvider()
         print("  🧠 Motor LLM: Conectando motor LLM de AURA...")
-    recorder = MicrophoneRecorder()
+
+    target_device = (
+        aura.config.get("audio.input_device", "") if getattr(aura, "config", None) else ""
+    )
+    if not target_device:
+        target_device = os.environ.get("AURA_AUDIO_INPUT_DEVICE", "C920")
+
+    recorder = MicrophoneRecorder(device=target_device)
 
     print("\n" + "═" * 60)
     print("  🔴 MODO CONVERSACIÓN ACTIVO — AURA TE ESTÁ ESCUCHANDO")
@@ -451,8 +471,14 @@ def _handle_converse(aura: AURA, arg: str) -> None:
     rounds = 0
     try:
         while max_rounds == 0 or rounds < max_rounds:
-            print("\n  🎙️  Escuchando... (4 segundos)")
-            audio_bytes = recorder.record_bytes(duration_sec=4.0)
+            print("\n  🎙️  Escuchando...")
+            audio_bytes = recorder.record_until_silence(
+                max_duration_sec=10.0,
+                silence_sec=1.2,
+                energy_threshold=120.0,
+            )
+            if not audio_bytes:
+                audio_bytes = recorder.record_bytes(duration_sec=3.0)
 
             stt_result = stt.transcribe(audio_bytes, language="es")
             user_text = stt_result.text.strip()
@@ -463,7 +489,9 @@ def _handle_converse(aura: AURA, arg: str) -> None:
 
             print(f"\n[Tú]:   {user_text}")
 
-            if any(w in user_text.lower() for w in ("salir", "adiós", "adios", "hasta luego")):
+            from aura.cognition import ControlIntentDetector
+
+            if ControlIntentDetector.is_exit(user_text):
                 farewell = "Hasta luego. Fue un placer conversar contigo."
                 print(f"[AURA]: {farewell}")
                 tts.speak(farewell)
@@ -499,7 +527,7 @@ def _handle_auto(aura: AURA) -> None:
     import os
 
     from aura.audio import AutonomousVoiceAgent, EdgeTTSProvider, FasterWhisperSTTProvider
-    from aura.cognition import GeminiLLMProvider, LLMProvider, OpenAILLMProvider
+    from aura.cognition import CognitionModule, GeminiLLMProvider, LLMProvider, OpenAILLMProvider
 
     aura.config.load_from_env()
 
@@ -521,12 +549,23 @@ def _handle_auto(aura: AURA) -> None:
     stt = FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
     tts = EdgeTTSProvider(voice="es-aura")
 
+    cog_mod = aura.module_manager.get("cognition") if aura.module_manager else None
+    cognition = cog_mod if isinstance(cog_mod, CognitionModule) else None
+
+    target_device = (
+        aura.config.get("audio.input_device", "") if getattr(aura, "config", None) else ""
+    )
+    if not target_device:
+        target_device = os.environ.get("AURA_AUDIO_INPUT_DEVICE", "C920")
+
     agent = AutonomousVoiceAgent(
         llm_provider=llm,
         stt_provider=stt,
         tts_provider=tts,
         event_bus=aura.event_bus,
         scheduler=aura.scheduler,
+        cognition_module=cognition,
+        input_device=target_device,
     )
 
     try:

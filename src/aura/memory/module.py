@@ -36,12 +36,17 @@ class MemoryModule(BaseModule):
 
         self.store: MemoryStore | None = store
         if self.store is None and enabled:
-            try:
-                self.store = SQLiteMemoryStore(db_path=db_path)
-            except Exception as exc:
-                logger = get_logger("MemoryModule")
-                logger.warning(f"Could not initialize SQLiteMemoryStore: {exc}")
-                self.store = None
+            if container is not None and container.has(SQLiteMemoryStore):
+                self.store = container.resolve(SQLiteMemoryStore)
+            elif container is not None and container.has(MemoryStore):
+                self.store = container.resolve(MemoryStore)  # type: ignore[type-abstract]
+            else:
+                try:
+                    self.store = SQLiteMemoryStore(db_path=db_path)
+                except Exception as exc:
+                    logger = get_logger("MemoryModule")
+                    logger.warning(f"Could not initialize SQLiteMemoryStore: {exc}")
+                    self.store = None
 
         self.episodic = EpisodicMemory(event_bus=event_bus, store=self.store)
         self.semantic = SemanticMemory(event_bus=event_bus, store=self.store)

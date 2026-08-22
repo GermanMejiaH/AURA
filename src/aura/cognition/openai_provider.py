@@ -51,7 +51,7 @@ class OpenAILLMProvider(LLMProvider):
         if not resolved_url:
             if os.environ.get("GROQ_API_KEY"):
                 resolved_url = "https://api.groq.com/openai/v1"
-                model_name = model_name or "llama-3.1-8b-instant"
+                model_name = model_name or "groq/compound"
             elif os.environ.get("OPENROUTER_API_KEY"):
                 resolved_url = "https://openrouter.ai/api/v1"
                 model_name = model_name or "meta-llama/llama-3.1-8b-instruct:free"
@@ -62,7 +62,7 @@ class OpenAILLMProvider(LLMProvider):
 
         self.api_key = resolved_key or "ollama"
         self.base_url = resolved_url
-        self.model_name = model_name or "llama-3.3-70b-versatile"
+        self.model_name = model_name or "groq/compound"
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._client: Any = None
@@ -84,6 +84,13 @@ class OpenAILLMProvider(LLMProvider):
         context: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Generates a response using the OpenAI-compatible REST API."""
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        telemetry = TelemetryManager.get_instance()
+        start_t = time.perf_counter()
+
         try:
             client = self._get_client()
 
@@ -103,6 +110,11 @@ class OpenAILLMProvider(LLMProvider):
             content = response.choices[0].message.content or ""
             tokens = getattr(getattr(response, "usage", None), "total_tokens", len(content) // 4)
 
+            elapsed_ms = (time.perf_counter() - start_t) * 1000
+            telemetry.increment("llm_calls_total")
+            telemetry.increment("llm_calls_success")
+            telemetry.record_latency("time_llm_ms", elapsed_ms)
+
             return LLMResponse(
                 content=content.strip(),
                 tokens_used=tokens,
@@ -110,8 +122,78 @@ class OpenAILLMProvider(LLMProvider):
             )
 
         except Exception as exc:
+            from ..logging import get_logger
+
+            logger = get_logger("OpenAILLMProvider")
             error_msg = str(exc)
-            if "api_key" in error_msg.lower() or "401" in error_msg:
+            status_code = getattr(
+                exc,
+                "status_code",
+                429 if ("429" in error_msg or "rate" in error_msg.lower()) else None,
+            )
+
+            headers = getattr(exc, "headers", {}) or getattr(
+                getattr(exc, "response", None), "headers", {}
+            )
+            retry_after_val = headers.get("retry-after") or headers.get("x-ratelimit-reset-tokens")
+            remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
+
+            elapsed_ms = (time.perf_counter() - start_t) * 1000
+            telemetry.increment("llm_calls_total")
+            telemetry.increment("llm_calls_failed")
+            telemetry.record_latency("time_llm_ms", elapsed_ms)
+
+            if status_code == 429 or "429" in error_msg or "rate" in error_msg.lower():
+                telemetry.increment("llm_rate_limit_429")
+                logger.warning(
+                    f"HTTP 429 Rate Limit hit [provider=OpenAILLMProvider, "
+                    f"base_url={self.base_url}, model={self.model_name}, status=429, "
+                    f"error={error_msg[:150]}, retry_after={retry_after_val}, "
+                    f"remaining_tokens={remaining_tokens}]"
+                )
+
+                # Retry schedule: Retry #1 at 1s, Retry #2 at 2s
+                retry_delays = [1.0, 2.0]
+                if retry_after_val:
+                    try:
+                        parsed_delay = float(str(retry_after_val).rstrip("s"))
+                        if 0 < parsed_delay <= 5.0:
+                            retry_delays = [parsed_delay]
+                    except ValueError:
+                        pass
+
+                for attempt, delay in enumerate(retry_delays, start=1):
+                    logger.info(
+                        f"Retrying LLM request (Attempt #{attempt}) after {delay:.1f}s delay..."
+                    )
+                    time.sleep(delay)
+                    try:
+                        client = self._get_client()
+                        response = client.chat.completions.create(
+                            model=self.model_name,
+                            messages=messages,
+                            temperature=self.temperature,
+                            max_tokens=self.max_tokens,
+                        )
+                        content = response.choices[0].message.content or ""
+                        tokens = getattr(
+                            getattr(response, "usage", None), "total_tokens", len(content) // 4
+                        )
+                        return LLMResponse(
+                            content=content.strip(),
+                            tokens_used=tokens,
+                            raw_response=response,
+                        )
+                    except Exception as retry_exc:
+                        logger.warning(f"Retry #{attempt} after 429 failed: {retry_exc}")
+                        error_msg = str(retry_exc)
+
+                logger.warning("[LLM] Rate limit fallback activated")
+                friendly = (
+                    "Rate Limit 429: Estoy experimentando alta demanda en este momento. "
+                    "Inténtalo nuevamente en unos segundos."
+                )
+            elif "api_key" in error_msg.lower() or "401" in error_msg:
                 friendly = "API Key no válida o no encontrada. Revisa tu archivo .env."
             elif "connection" in error_msg.lower() or "10061" in error_msg:
                 friendly = f"No se pudo conectar con el servidor LLM en {self.base_url}."
@@ -121,7 +203,11 @@ class OpenAILLMProvider(LLMProvider):
             return LLMResponse(
                 content=friendly,
                 tokens_used=0,
-                metadata={"error": error_msg},
+                metadata={
+                    "error": error_msg,
+                    "status_code": status_code or 500,
+                    "rate_limited": (status_code == 429),
+                },
             )
 
     def structured_reason(

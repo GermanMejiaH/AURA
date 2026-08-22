@@ -84,9 +84,21 @@ class RuntimeOperation:
 class RuntimeOrchestrationStore:
     """Thread-safe SQLite store for persisting runtime operations."""
 
-    def __init__(self, store: SQLiteMemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        store: SQLiteMemoryStore | None = None,
+        container: Any | None = None,
+        db_path: str = ":memory:",
+    ) -> None:
         self._lock = threading.RLock()
-        self.store = store or SQLiteMemoryStore(db_path=":memory:")
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
         self._init_tables()
 
     def _init_tables(self) -> None:

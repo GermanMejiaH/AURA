@@ -154,9 +154,21 @@ class RecoveryResult:
 class RuntimeAssuranceStore:
     """Thread-safe SQLite store for audit trail, checkpoints, and recovery records."""
 
-    def __init__(self, store: SQLiteMemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        store: SQLiteMemoryStore | None = None,
+        container: Any | None = None,
+        db_path: str = ":memory:",
+    ) -> None:
         self._lock = threading.RLock()
-        self._memory_store = store or SQLiteMemoryStore(db_path=":memory:")
+        if store is not None:
+            self._memory_store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self._memory_store = container.resolve(SQLiteMemoryStore)
+        else:
+            self._memory_store = SQLiteMemoryStore(db_path=db_path)
         self._init_tables()
 
     def _init_tables(self) -> None:

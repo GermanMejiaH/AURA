@@ -16,8 +16,19 @@ class AgentPlanStore:
         self,
         db_path: str = "data/aura.db",
         store: SQLiteMemoryStore | None = None,
+        container: Any | None = None,
     ) -> None:
-        self.store = store if store is not None else SQLiteMemoryStore(db_path=db_path)
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        elif container is not None and hasattr(container, "has") and container.has("MemoryStore"):
+            self.store = container.resolve("MemoryStore")
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
+
         self._lock = self.store._lock
 
     def save_plan(self, plan: AgentPlan) -> None:

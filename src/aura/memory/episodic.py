@@ -127,11 +127,25 @@ class EpisodicMemoryConsolidator:
         history_store: AgentExecutionHistoryStore | None = None,
         store: SQLiteMemoryStore | None = None,
         db_path: str = "data/aura.db",
+        container: Any | None = None,
     ) -> None:
         from ..autonomy.history import AgentExecutionHistoryStore
-        from .store import SQLiteMemoryStore
+        from .store import MemoryStore, SQLiteMemoryStore
 
-        self.store = store if store is not None else SQLiteMemoryStore(db_path=db_path)
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        elif container is not None and hasattr(container, "has") and container.has(MemoryStore):
+            resolved = container.resolve(MemoryStore)
+            if isinstance(resolved, SQLiteMemoryStore):
+                self.store = resolved
+            else:
+                self.store = SQLiteMemoryStore(db_path=db_path)
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
         self.episodic_memory = (
             episodic_memory
             if episodic_memory is not None

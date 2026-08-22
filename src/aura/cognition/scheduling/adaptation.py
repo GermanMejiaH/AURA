@@ -299,10 +299,16 @@ class RuntimeAdaptationStore:
         self,
         db_path: str = ":memory:",
         store: SQLiteMemoryStore | None = None,
+        container: Any | None = None,
     ) -> None:
         if store is not None:
             self._memory_store = store
             self.db_path = store.db_path
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self._memory_store = container.resolve(SQLiteMemoryStore)
+            self.db_path = self._memory_store.db_path
         else:
             self._memory_store = SQLiteMemoryStore(db_path=db_path)
             self.db_path = db_path

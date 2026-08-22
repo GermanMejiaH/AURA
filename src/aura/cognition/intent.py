@@ -31,6 +31,152 @@ class Intent:
     raw_text: str = ""
 
 
+class ControlIntentDetector:
+    """Deterministic pre-LLM detector for system control intents (EXIT, CANCEL)."""
+
+    EXIT_VARIANTS: tuple[str, ...] = (
+        "salir",
+        "salid",
+        "salida",
+        "exit",
+        "adios",
+        "adiós",
+        "chao",
+        "bye",
+        "cerrar",
+        "cierra",
+        "cerrar sesión",
+        "cerrar sesion",
+        "cierra la sesión",
+        "cierra la sesion",
+        "apágate",
+        "apagate",
+        "apagar",
+        "hasta luego",
+        "nos vemos",
+        "desactivar modo autónomo",
+        "desactivar modo autonomo",
+        "detener autónomo",
+        "detener autonomo",
+    )
+
+    CANCEL_VARIANTS: tuple[str, ...] = (
+        "cancela",
+        "cancelar",
+        "detener",
+        "stop",
+        "abortar",
+        "para",
+    )
+
+    GREETING_VARIANTS: tuple[str, ...] = (
+        "hola",
+        "hola aura",
+        "hey",
+        "hey aura",
+        "buenos dias",
+        "buenos días",
+        "buenas tardes",
+        "buenas noches",
+        "que tal",
+        "qué tal",
+        "hola ahora",
+    )
+
+    DIRECT_MEMORY_PATTERNS: tuple[str, ...] = (
+        r"\bcu[aá]l\s+es\s+mi\b",
+        r"\bc[oó]mo\s+me\s+llamo\b",
+        r"\bqui[eé]n\s+soy\b",
+        r"\bqu[eé]\s+sabes\s+de\s+m[ií]\b",
+        r"\bsabes\s+cu[aá]l\s+es\s+mi\b",
+    )
+
+    @classmethod
+    def normalize_text(cls, text: str | Any) -> str:
+        """Strips punctuation, symbols, and collapses whitespace."""
+        if not text or not isinstance(text, str):
+            return ""
+        # Remove common punctuation symbols
+        cleaned = re.sub(r"[^\w\sáéíóúñÁÉÍÓÚÑ]", " ", text.strip().lower())
+        # Collapse multiple spaces into single space
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    @classmethod
+    def is_exit(cls, input_text: str) -> bool:
+        """Determines pre-LLM whether user input is an explicit EXIT command."""
+        norm = cls.normalize_text(input_text)
+        if not norm:
+            return False
+
+        # Strip optional leading/trailing "aura" keyword (e.g. "aura salir", "salir aura")
+        words = norm.split()
+        filtered_words = [w for w in words if w != "aura"]
+        filtered_norm = " ".join(filtered_words)
+
+        if not filtered_norm:
+            return False
+
+        # Direct match against normalized string or single word matching
+        for variant in cls.EXIT_VARIANTS:
+            norm_variant = cls.normalize_text(variant)
+            if filtered_norm == norm_variant or norm == norm_variant:
+                return True
+            # Also check if filtered_norm is a 1-2 word utterance starting/ending with variant
+            if len(filtered_words) <= 3 and norm_variant in filtered_norm:
+                return True
+
+        return False
+
+    @classmethod
+    def is_cancel(cls, input_text: str) -> bool:
+        """Determines pre-LLM whether user input is an explicit CANCEL command."""
+        norm = cls.normalize_text(input_text)
+        if not norm:
+            return False
+
+        words = [w for w in norm.split() if w != "aura"]
+        filtered_norm = " ".join(words)
+
+        for variant in cls.CANCEL_VARIANTS:
+            norm_variant = cls.normalize_text(variant)
+            if filtered_norm == norm_variant or norm == norm_variant:
+                return True
+
+        return False
+
+    @classmethod
+    def is_greeting(cls, input_text: str) -> bool:
+        """Determines pre-LLM whether user input is a standard greeting."""
+        norm = cls.normalize_text(input_text)
+        if not norm:
+            return False
+
+        for variant in cls.GREETING_VARIANTS:
+            norm_variant = cls.normalize_text(variant)
+            if norm == norm_variant:
+                return True
+
+        return False
+
+    @classmethod
+    def get_greeting_response(cls) -> str:
+        """Returns deterministic friendly greeting response."""
+        return "¡Hola! ¿En qué puedo ayudarte?"
+
+    @classmethod
+    def is_direct_memory_query(cls, input_text: str) -> bool:
+        """Determines pre-LLM whether user input is a direct personal memory query."""
+        norm = cls.normalize_text(input_text)
+        if not norm:
+            return False
+
+        for pattern in cls.DIRECT_MEMORY_PATTERNS:
+            if re.search(pattern, norm, re.IGNORECASE):
+                return True
+
+        return False
+
+
 class IntentDetector:
     """Lightweight, deterministic regex/keyword intent detector with safe fallback."""
 

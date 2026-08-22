@@ -17,8 +17,8 @@ from .evaluator import EvaluationResult, EvaluationStatus, TaskEvaluator
 from .factory import create_llm_provider
 from .gemini_provider import GeminiLLMProvider
 from .identity import AURAIdentity, IdentityManager
+from .intent import ControlIntentDetector, IntentDetector, IntentType
 from .intent import Intent as DetectedIntent
-from .intent import IntentDetector, IntentType
 from .module import CognitionModule
 from .openai_provider import OpenAILLMProvider
 from .planner import Plan, Planner, PlanStep
@@ -50,6 +50,7 @@ __all__ = [
     "CognitiveState",
     "CognitiveStateMachine",
     "CognitiveTurnInterpretation",
+    "ControlIntentDetector",
     "ConversationContext",
     "ConversationContextFilter",
     "Decision",

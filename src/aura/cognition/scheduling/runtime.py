@@ -304,6 +304,10 @@ class ContinuousAutonomyRuntime:
             self._tick_count += 1
             self._last_tick_at = now_iso
 
+            from ...telemetry import TelemetryManager
+
+            TelemetryManager.get_instance().increment("autonomy_cycles")
+
             results = self.dispatcher.process_due_schedules(
                 at_timestamp=now_iso,
                 execute_goals=True,

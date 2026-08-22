@@ -55,7 +55,7 @@ def create_llm_provider(
             return OpenAILLMProvider(
                 api_key=groq_key,
                 base_url="https://api.groq.com/openai/v1",
-                model_name=os.environ.get("AURA_LLM_MODEL", "llama-3.3-70b-versatile"),
+                model_name=os.environ.get("AURA_LLM_MODEL", "groq/compound"),
             )
         except Exception as exc:
             logger.warning(f"Failed to initialize Groq provider: {exc}")

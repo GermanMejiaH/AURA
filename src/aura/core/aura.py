@@ -33,6 +33,7 @@ from ..logging import (
     attach_event_bus as attach_log_to_bus,
 )
 from ..modules.base import BaseModule
+from ..telemetry import TelemetryManager
 from .lifecycle import LifecycleManager, SystemState
 from .module_manager import ModuleManager
 from .scheduler import Scheduler
@@ -71,6 +72,7 @@ class AURA:
     event_bus: EventBus = field(default_factory=EventBus)
     logger_root: AuraLogger = field(default_factory=AuraLogger)
     lifecycle: LifecycleManager = field(default_factory=LifecycleManager)
+    telemetry: TelemetryManager = field(default_factory=TelemetryManager.get_instance)
     module_manager: ModuleManager | None = None
     scheduler: Scheduler | None = None
     health_monitor: HealthMonitor | None = None
@@ -267,6 +269,20 @@ class AURA:
         self.container.register(LifecycleManager, instance=self.lifecycle)
         self.container.register(AuraLogger, instance=self.logger_root)
         self.container.register(Diagnostics, instance=self.diagnostics)
+        self.container.register(TelemetryManager, instance=self.telemetry)
+
+        if self.options.enable_memory or self.config.get_typed("memory.enabled", bool, True):
+            from ..memory.store import MemoryStore, SQLiteMemoryStore
+
+            db_path = self.config.get_typed("memory.db_path", str, "data/aura.db")
+            shared_store = SQLiteMemoryStore(db_path=db_path)
+            self.container.register(MemoryStore, instance=shared_store)
+            self.container.register(SQLiteMemoryStore, instance=shared_store)
+            logger = get_logger("AURA")
+            logger.info(
+                f"[AURA MEMORY] Shared SQLiteMemoryStore id={id(shared_store)} path={db_path}"
+            )
+
         self.event_bus.publish(SystemBooting(source="AURA"))
         logger = get_logger("AURA")
         logger.debug("Step 3/8: Core services registered in IoC container")

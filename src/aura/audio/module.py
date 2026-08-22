@@ -83,7 +83,12 @@ class AudioModule(BaseModule):
 
     def start_voice_capture(self, device: int | str | None = None) -> None:
         """Starts controlled audio capture (Push-to-Talk)."""
-        self.audio_input.start_capture(device=device)
+        target_dev = device
+        if target_dev is None and self._config is not None:
+            cfg_val = self._config.get("audio.input_device", "")
+            if cfg_val:
+                target_dev = cfg_val
+        self.audio_input.start_capture(device=target_dev)
 
     def stop_voice_capture_and_process(
         self,

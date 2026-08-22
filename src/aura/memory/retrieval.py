@@ -197,7 +197,10 @@ class MemoryRetrievalEngine:
         if overlap:
             score += self.W_TOKEN_OVERLAP * (len(overlap) / max(len(query_tokens), 1))
 
-        if norm_subj in query_tokens or "usuario" in norm_subj:
+        if score > 0 and (
+            norm_subj in query_tokens
+            or any(t in ("yo", "mi", "mis", "mio", "usuario") for t in query_tokens)
+        ):
             score += self.W_SUBJECT_MATCH
 
         return score * fact.confidence
@@ -232,7 +235,7 @@ class MemoryRetrievalEngine:
         fact_scores: list[tuple[float, Fact]] = []
         for f in all_facts:
             s = self.score_fact(f, query_tokens)
-            if s > 0.1 or len(all_facts) <= 3:
+            if s > 0.1:
                 fact_scores.append((s, f))
 
         fact_scores.sort(
@@ -245,7 +248,7 @@ class MemoryRetrievalEngine:
         pref_scores: list[tuple[float, Preference]] = []
         for p in all_prefs:
             s = self.score_preference(p, query_tokens)
-            if s > 0.1 or len(all_prefs) <= 3:
+            if s > 0.1:
                 pref_scores.append((s, p))
 
         pref_scores.sort(key=lambda x: x[0], reverse=True)
@@ -299,8 +302,25 @@ class MemoryRetriever:
         self,
         store: SQLiteMemoryStore | None = None,
         db_path: str = "data/aura.db",
+        container: Any | None = None,
     ) -> None:
-        self.store = store if store is not None else SQLiteMemoryStore(db_path=db_path)
+        from .store import MemoryStore, SQLiteMemoryStore
+
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        elif container is not None and hasattr(container, "has") and container.has(MemoryStore):
+            resolved = container.resolve(MemoryStore)
+            if isinstance(resolved, SQLiteMemoryStore):
+                self.store = resolved
+            else:
+                self.store = SQLiteMemoryStore(db_path=db_path)
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
+
         self._lock = threading.RLock()
 
     def _normalize_tokens(self, text: str) -> set[str]:

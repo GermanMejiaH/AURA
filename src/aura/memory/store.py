@@ -1,3 +1,9 @@
+"""Memory Store Implementation — AURA 1.6 Stage 24.
+
+Provides abstract MemoryStore interface and thread-safe SQLiteMemoryStore with
+versioned schema migrations via PRAGMA user_version.
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,23 +14,25 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
 
-from ..logging import get_logger
-from .models import Episode, Fact, Preference
+from aura.logging import get_logger
+from aura.memory.models import Episode, Fact, Preference
+
+CURRENT_SCHEMA_VERSION = 1
 
 
 class MemoryStore(ABC):
-    """Abstract Base Class defining the contract for memory persistence backends."""
+    """Abstract base class for long-term memory stores."""
 
     @abstractmethod
     def save_fact(self, fact: Fact) -> None:
         pass
 
     @abstractmethod
-    def delete_fact(self, fact_id: str) -> bool:
+    def get_facts(self, subject: str | None = None, predicate: str | None = None) -> list[Fact]:
         pass
 
     @abstractmethod
-    def get_facts(self, subject: str | None = None, predicate: str | None = None) -> list[Fact]:
+    def delete_fact(self, fact_id: str) -> bool:
         pass
 
     @abstractmethod
@@ -55,9 +63,16 @@ class MemoryStore(ABC):
     def get_episodes(self, limit: int = 50, query: str | None = None) -> list[Episode]:
         pass
 
+    @abstractmethod
+    def close(self) -> None:
+        pass
+
 
 class SQLiteMemoryStore(MemoryStore):
-    """Thread-safe SQLite persistent store implementation for AURA's memory systems."""
+    """SQLite-backed implementation of MemoryStore supporting facts, episodes, and preferences.
+
+    Thread-safe implementation with versioned schema migrations via PRAGMA user_version.
+    """
 
     def __init__(self, db_path: str = "data/aura.db") -> None:
         self.db_path = db_path
@@ -80,6 +95,10 @@ class SQLiteMemoryStore(MemoryStore):
         logger = get_logger("SQLiteMemoryStore")
         try:
             conn = self._get_connection()
+            # 1. Versioned Schema Migrations
+            self._run_migrations(conn)
+
+            # 2. DDL Table Initialization for current schema
             with conn:
                 conn.execute(
                     """
@@ -261,12 +280,126 @@ class SQLiteMemoryStore(MemoryStore):
                     ON proactive_notifications(conversation_id, delivered)
                     """
                 )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_facts_subject_predicate
+                    ON facts(subject, predicate)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_episodes_timestamp
+                    ON episodes(timestamp DESC)
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_preferences_updated
+                    ON preferences(updated_at DESC)
+                    """
+                )
+
             logger.info(f"SQLiteMemoryStore initialized at '{self.db_path}'")
 
         except Exception as exc:
             logger.error(f"Failed to initialize SQLite database '{self.db_path}': {exc}")
+            raise
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """Executes versioned schema migrations based on PRAGMA user_version."""
+        logger = get_logger("SQLiteMemoryStore")
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA user_version;")
+        row = cursor.fetchone()
+        current_version = row[0] if row else 0
+
+        if current_version < 1:
+            logger.info(f"Migrating SQLite database '{self.db_path}' from V{current_version} -> V1")
+            old_isolation = conn.isolation_level
+            conn.isolation_level = None
+            conn.execute("BEGIN IMMEDIATE;")
+            try:
+                self._migrate_v0_to_v1(conn)
+                conn.execute("PRAGMA user_version = 1;")
+                conn.execute("COMMIT;")
+            except Exception:
+                conn.execute("ROLLBACK;")
+                raise
+            finally:
+                conn.isolation_level = old_isolation
+            logger.info(f"Database '{self.db_path}' migrated successfully to schema V1.")
+
+    def _migrate_v0_to_v1(self, conn: sqlite3.Connection) -> None:
+        """Executes V0 -> V1 schema migration for facts and episodes tables."""
+        logger = get_logger("SQLiteMemoryStore")
+        cursor = conn.cursor()
+
+        # 1. Facts table migration: object_val -> object
+        cursor.execute("PRAGMA table_info(facts);")
+        facts_cols = {row["name"]: row for row in cursor.fetchall()}
+
+        if facts_cols and "object_val" in facts_cols and "object" not in facts_cols:
+            logger.info("Migrating table 'facts': renaming column 'object_val' -> 'object'")
+            conn.execute("ALTER TABLE facts RENAME COLUMN object_val TO object;")
+
+        # 2. Episodes table migration: add event_type, add payload, migrate details/tags
+        cursor.execute("PRAGMA table_info(episodes);")
+        episodes_cols = {row["name"]: row for row in cursor.fetchall()}
+
+        if episodes_cols:
+            if "event_type" not in episodes_cols:
+                logger.info("Migrating table 'episodes': adding column 'event_type'")
+                conn.execute(
+                    "ALTER TABLE episodes ADD COLUMN event_type TEXT NOT NULL DEFAULT 'episode';"
+                )
+
+            if "payload" not in episodes_cols:
+                logger.info("Migrating table 'episodes': adding column 'payload'")
+                conn.execute("ALTER TABLE episodes ADD COLUMN payload TEXT NOT NULL DEFAULT '{}';")
+
+                has_details = "details" in episodes_cols
+                has_tags = "tags" in episodes_cols
+
+                if has_details or has_tags:
+                    logger.info("Migrating legacy details/tags into episode payload JSON...")
+                    select_sql = "SELECT id"
+                    if has_details:
+                        select_sql += ", details"
+                    if has_tags:
+                        select_sql += ", tags"
+                    select_sql += " FROM episodes;"
+
+                    cursor.execute(select_sql)
+                    legacy_rows = cursor.fetchall()
+
+                    for row in legacy_rows:
+                        ep_id = row["id"]
+                        dt_val = (
+                            row["details"] if has_details and row["details"] is not None else ""
+                        )
+                        tg_raw = row["tags"] if has_tags and row["tags"] is not None else "[]"
+
+                        tg_val = []
+                        if isinstance(tg_raw, str):
+                            try:
+                                tg_val = json.loads(tg_raw)
+                            except Exception:
+                                tg_val = [tg_raw] if tg_raw else []
+                        elif isinstance(tg_raw, list):
+                            tg_val = tg_raw
+
+                        payload_str = json.dumps({"details": dt_val, "tags": tg_val})
+                        conn.execute(
+                            "UPDATE episodes SET payload = ? WHERE id = ?;",
+                            (payload_str, ep_id),
+                        )
 
     def save_fact(self, fact: Fact) -> None:
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        t0 = time.perf_counter()
         with self._lock:
             try:
                 conn = self._get_connection()
@@ -287,6 +420,9 @@ class SQLiteMemoryStore(MemoryStore):
                             fact.created_at.isoformat(),
                         ),
                     )
+                telemetry = TelemetryManager.get_instance()
+                telemetry.increment("memory_writes")
+                telemetry.record_latency("time_memory_ms", (time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to save fact '{fact.id}': {exc}")
@@ -297,13 +433,19 @@ class SQLiteMemoryStore(MemoryStore):
                 conn = self._get_connection()
                 with conn:
                     cur = conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
-                    return cur.rowcount > 0
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to delete fact '{fact_id}': {exc}")
                 return False
+            else:
+                return cur.rowcount > 0
 
     def get_facts(self, subject: str | None = None, predicate: str | None = None) -> list[Fact]:
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        t0 = time.perf_counter()
         with self._lock:
             try:
                 conn = self._get_connection()
@@ -336,6 +478,9 @@ class SQLiteMemoryStore(MemoryStore):
                             source=row["source"],
                         )
                     )
+                telemetry = TelemetryManager.get_instance()
+                telemetry.increment("memory_retrievals")
+                telemetry.record_latency("time_memory_ms", (time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to retrieve facts: {exc}")
@@ -344,6 +489,11 @@ class SQLiteMemoryStore(MemoryStore):
                 return facts
 
     def save_preference(self, preference: Preference) -> None:
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        t0 = time.perf_counter()
         with self._lock:
             try:
                 conn = self._get_connection()
@@ -360,6 +510,9 @@ class SQLiteMemoryStore(MemoryStore):
                             preference.updated_at.isoformat(),
                         ),
                     )
+                telemetry = TelemetryManager.get_instance()
+                telemetry.increment("memory_writes")
+                telemetry.record_latency("time_memory_ms", (time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to save preference '{preference.key}': {exc}")
@@ -386,6 +539,11 @@ class SQLiteMemoryStore(MemoryStore):
         return self.get_all_preferences()
 
     def get_all_preferences(self) -> list[Preference]:
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        t0 = time.perf_counter()
         with self._lock:
             try:
                 conn = self._get_connection()
@@ -400,6 +558,9 @@ class SQLiteMemoryStore(MemoryStore):
                             category=row["category"],
                         )
                     )
+                telemetry = TelemetryManager.get_instance()
+                telemetry.increment("memory_retrievals")
+                telemetry.record_latency("time_memory_ms", (time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to retrieve preferences: {exc}")
@@ -413,13 +574,19 @@ class SQLiteMemoryStore(MemoryStore):
                 conn = self._get_connection()
                 with conn:
                     cur = conn.execute("DELETE FROM preferences WHERE key = ?", (key,))
-                    return cur.rowcount > 0
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to delete preference '{key}': {exc}")
                 return False
+            else:
+                return cur.rowcount > 0
 
     def save_episode(self, episode: Episode) -> None:
+        import time
+
+        from ..telemetry import TelemetryManager
+
+        t0 = time.perf_counter()
         with self._lock:
             try:
                 conn = self._get_connection()
@@ -440,6 +607,9 @@ class SQLiteMemoryStore(MemoryStore):
                             episode.importance,
                         ),
                     )
+                telemetry = TelemetryManager.get_instance()
+                telemetry.increment("memory_writes")
+                telemetry.record_latency("time_memory_ms", (time.perf_counter() - t0) * 1000)
             except Exception as exc:
                 logger = get_logger("SQLiteMemoryStore")
                 logger.error(f"Failed to save episode '{episode.id}': {exc}")

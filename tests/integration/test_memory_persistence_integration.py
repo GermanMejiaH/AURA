@@ -227,8 +227,12 @@ def test_multi_step_food_update_sequence_and_independence(tmp_path: Path) -> Non
     sys_prompt = ctx.to_system_prompt()
 
     assert "la pasta" in sys_prompt.lower()
-    assert "el verde" in sys_prompt.lower()
     assert "la pizza" not in sys_prompt.lower()
     assert "la hamburguesa" not in sys_prompt.lower()
+    assert "el verde" not in sys_prompt.lower()
+
+    ctx_color = cog2.context_builder.build("¿Cuál es mi color favorito?")
+    sys_prompt_color = ctx_color.to_system_prompt()
+    assert "el verde" in sys_prompt_color.lower()
 
     aura2.shutdown(wait=True)

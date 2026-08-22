@@ -477,9 +477,7 @@ def test_s23_17_duplicate_event_does_not_duplicate_execution() -> None:
         trigger_definition=TriggerDefinition(
             trigger_type=TriggerType.TIME_CONDITION, target_time_iso=past_iso
         ),
-        action_proposal=ActionProposal(
-            tool_name="datetime_tool", tool_kwargs={"action": "now"}
-        ),
+        action_proposal=ActionProposal(tool_name="datetime_tool", tool_kwargs={"action": "now"}),
         max_executions=1,
     )
 
@@ -511,9 +509,7 @@ def test_s23_18_idempotent_concurrent_trigger_evaluation() -> None:
         trigger_definition=TriggerDefinition(
             trigger_type=TriggerType.TIME_CONDITION, target_time_iso=past_iso
         ),
-        action_proposal=ActionProposal(
-            tool_name="datetime_tool", tool_kwargs={"action": "now"}
-        ),
+        action_proposal=ActionProposal(tool_name="datetime_tool", tool_kwargs={"action": "now"}),
         max_executions=1,
     )
 

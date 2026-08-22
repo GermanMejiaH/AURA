@@ -45,7 +45,6 @@ from ..events import (
     RuntimeUnexpectedShutdownDetected,
 )
 from ..logging import get_logger
-from ..memory.store import SQLiteMemoryStore
 from ..modules.base import BaseModule, ModuleStatus
 from ..tools.registry import ToolRegistry
 from .executor import AgentExecutor
@@ -93,7 +92,11 @@ class AutonomyModule(BaseModule):
         orchestrator: RuntimeOrchestrator | None = None,
     ) -> None:
         super().__init__(config, container, event_bus)
-        self.goals = goal_manager or GoalManager(event_bus=event_bus)
+        self.goals = (
+            goal_manager
+            if goal_manager is not None
+            else GoalManager(event_bus=event_bus, container=container)
+        )
         self.priority_engine = priority_engine or PriorityEngine(event_bus=event_bus)
         self.planner = planner or LongHorizonPlanner(event_bus=event_bus)
         self.learning = learning_engine or LearningEngine(event_bus=event_bus)
@@ -156,10 +159,7 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(RuntimeExperienceStore):
                 self.experience_store = self._container.resolve(RuntimeExperienceStore)
             else:
-                sql_store = None
-                if self._container is not None and self._container.has(SQLiteMemoryStore):
-                    sql_store = self._container.resolve(SQLiteMemoryStore)
-                self.experience_store = RuntimeExperienceStore(store=sql_store)
+                self.experience_store = RuntimeExperienceStore(container=self._container)
 
         if self.experience_engine is None:
             if self._container is not None and self._container.has(RuntimeExperienceEngine):
@@ -176,10 +176,7 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(ScheduleStore):
                 self.schedule_store = self._container.resolve(ScheduleStore)
             else:
-                sql_store = None
-                if self._container is not None and self._container.has(SQLiteMemoryStore):
-                    sql_store = self._container.resolve(SQLiteMemoryStore)
-                self.schedule_store = ScheduleStore(store=sql_store)
+                self.schedule_store = ScheduleStore(container=self._container)
 
         if self.schedule_dispatcher is None:
             if self._container is not None and self._container.has(ScheduleDispatcher):
@@ -201,7 +198,9 @@ class AutonomyModule(BaseModule):
                         cog_goals = self._container.resolve(CognitionGoalManager)
 
                 if cog_goals is None:
-                    cog_goals = CognitionGoalManager(event_bus=self._event_bus)
+                    cog_goals = CognitionGoalManager(
+                        event_bus=self._event_bus, container=self._container
+                    )
 
                 self.schedule_dispatcher = ScheduleDispatcher(
                     schedule_store=self.schedule_store,
@@ -256,13 +255,12 @@ class AutonomyModule(BaseModule):
                 if self._container is not None and self._container.has(RuntimeHistoryStore):
                     self.history_store = self._container.resolve(RuntimeHistoryStore)
                 else:
-                    sql_store = None
-                    if self._container is not None and self._container.has(SQLiteMemoryStore):
-                        sql_store = self._container.resolve(SQLiteMemoryStore)
                     max_ev = 1000
                     if self._config is not None:
                         max_ev = self._config.get_typed("autonomy.history_max_events", int, 1000)
-                    self.history_store = RuntimeHistoryStore(store=sql_store, max_events=max_ev)
+                    self.history_store = RuntimeHistoryStore(
+                        container=self._container, max_events=max_ev
+                    )
 
             if (
                 self._event_bus is not None
@@ -301,7 +299,7 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(RuntimeAdaptationStore):
                 self.adaptation_store = self._container.resolve(RuntimeAdaptationStore)
             else:
-                self.adaptation_store = RuntimeAdaptationStore()
+                self.adaptation_store = RuntimeAdaptationStore(container=self._container)
 
         if self.adaptation_engine is None:
             if self._container is not None and self._container.has(RuntimeAdaptivePolicyEngine):
@@ -321,7 +319,7 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(RuntimeAssuranceStore):
                 self.assurance_store = self._container.resolve(RuntimeAssuranceStore)
             else:
-                self.assurance_store = RuntimeAssuranceStore()
+                self.assurance_store = RuntimeAssuranceStore(container=self._container)
 
         if self.assurance_engine is None:
             if self._container is not None and self._container.has(RuntimeAssuranceEngine):
@@ -343,7 +341,7 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(RuntimeOrchestrationStore):
                 self.orchestration_store = self._container.resolve(RuntimeOrchestrationStore)
             else:
-                self.orchestration_store = RuntimeOrchestrationStore()
+                self.orchestration_store = RuntimeOrchestrationStore(container=self._container)
 
         if self.orchestrator is None:
             if self._container is not None and self._container.has(RuntimeOrchestrator):
@@ -400,7 +398,9 @@ class AutonomyModule(BaseModule):
             if self._container is not None and self._container.has(RuntimeStateStore):
                 self.state_store = self._container.resolve(RuntimeStateStore)
             else:
-                self.state_store = RuntimeStateStore(event_bus=self._event_bus)
+                self.state_store = RuntimeStateStore(
+                    event_bus=self._event_bus, container=self._container
+                )
 
         if self._container is not None:
             self._container.register(GoalManager, instance=self.goals)

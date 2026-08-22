@@ -24,8 +24,24 @@ class CognitiveContextManager:
         store: SQLiteMemoryStore | None = None,
         db_path: str = "data/aura.db",
         event_bus: EventBus | None = None,
+        container: Any | None = None,
     ) -> None:
-        self.store = store if store is not None else SQLiteMemoryStore(db_path=db_path)
+        from .store import MemoryStore, SQLiteMemoryStore
+
+        if store is not None:
+            self.store = store
+        elif (
+            container is not None and hasattr(container, "has") and container.has(SQLiteMemoryStore)
+        ):
+            self.store = container.resolve(SQLiteMemoryStore)
+        elif container is not None and hasattr(container, "has") and container.has(MemoryStore):
+            resolved = container.resolve(MemoryStore)
+            if isinstance(resolved, SQLiteMemoryStore):
+                self.store = resolved
+            else:
+                self.store = SQLiteMemoryStore(db_path=db_path)
+        else:
+            self.store = SQLiteMemoryStore(db_path=db_path)
         self.memory = (
             memory
             if memory is not None

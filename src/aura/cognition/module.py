@@ -69,12 +69,16 @@ class CognitionModule(BaseModule):
         self.planner = Planner()
         self.coordinator = ActionCoordinator(event_bus=event_bus)
         self.context_builder = CognitiveContextBuilder(container=container)
-        self.plan_store = plan_store if plan_store is not None else AgentPlanStore()
+        self.plan_store = (
+            plan_store if plan_store is not None else AgentPlanStore(container=container)
+        )
         self.verifier = ActionVerifier()
         self.reflector = CognitiveReflector()
         from ..memory import CognitiveContextManager
 
-        self.cognitive_context_manager = CognitiveContextManager(event_bus=event_bus)
+        self.cognitive_context_manager = CognitiveContextManager(
+            event_bus=event_bus, container=container
+        )
         from .tool_orchestrator import ToolOrchestrator
 
         self.tool_orchestrator = ToolOrchestrator(event_bus=event_bus)
@@ -483,5 +487,9 @@ class CognitionModule(BaseModule):
             f"Cognitive cycle complete: context_build={t_context_build:.3f}s "
             f"llm_request={t_llm_request:.3f}s total={t_total:.3f}s"
         )
+
+        from ..telemetry import TelemetryManager
+
+        TelemetryManager.get_instance().record_latency("time_cognition_ms", t_total * 1000)
 
         return reasoning_res
