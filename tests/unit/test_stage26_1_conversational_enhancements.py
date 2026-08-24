@@ -104,7 +104,8 @@ class TestStage261ConversationalEnhancements:
     def test_cognition_module_boot_hydration_integration(
         self, memory_store: SQLiteMemoryStore
     ) -> None:
-        """Verify CognitionModule hydrates WorkingMemory on initialization when container is provided."""
+        """Verify CognitionModule hydrates WorkingMemory on initialization
+        when container is provided."""
         # 1. Store turn in DB
         conv_mem = ConversationalMemory(store=memory_store)
         conv_mem.add_turn(

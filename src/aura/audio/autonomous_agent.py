@@ -201,14 +201,134 @@ class AutonomousVoiceAgent:
                         if container and container.has(MemoryModule):
                             mem_mod = container.resolve(MemoryModule)
                             res_retrieval = mem_mod.retrieval.query(user_text)
-
                             top_fact = res_retrieval.facts[0] if res_retrieval.facts else None
                             top_pref = (
                                 res_retrieval.preferences[0] if res_retrieval.preferences else None
                             )
 
-                            if top_fact and top_fact.confidence >= 0.85:
-                                ans = f"Tu {top_fact.predicate} es {top_fact.object_val}."
+                            is_open_query = mem_mod.retrieval._is_open_recall_query(
+                                user_text, mem_mod.retrieval._get_query_tokens(user_text)
+                            )
+
+                            if is_open_query and (
+                                res_retrieval.facts or mem_mod.semantic.all_facts()
+                            ):
+                                from ..memory.retrieval import normalize_text
+
+                                all_facts = list(mem_mod.semantic.all_facts()) + list(
+                                    res_retrieval.facts
+                                )
+                                fact_dict: dict[str, str] = {}
+                                for f in all_facts:
+                                    norm_p = normalize_text(f.predicate)
+                                    fact_dict[norm_p] = f.object_val
+
+                                profile_parts: list[str] = []
+
+                                # Nombre
+                                name_val = next(
+                                    (
+                                        v
+                                        for k, v in fact_dict.items()
+                                        if "nombre" in k or k == "usuario"
+                                    ),
+                                    None,
+                                )
+                                if name_val:
+                                    profile_parts.append(f"Nombre: {name_val}")
+
+                                # Edad
+                                age_val = next(
+                                    (
+                                        v
+                                        for k, v in fact_dict.items()
+                                        if "edad" in k or "anos" in k or "anios" in k
+                                    ),
+                                    None,
+                                )
+                                if age_val:
+                                    profile_parts.append(f"Edad: {age_val}")
+
+                                # Ciudad
+                                city_val = next(
+                                    (
+                                        v
+                                        for k, v in fact_dict.items()
+                                        if "ciudad" in k
+                                        or "vivo" in k
+                                        or "residencia" in k
+                                        or "ubicacion" in k
+                                    ),
+                                    None,
+                                )
+                                if city_val:
+                                    profile_parts.append(f"Ciudad: {city_val}")
+
+                                # Actividad
+                                act_val = next(
+                                    (
+                                        v
+                                        for k, v in fact_dict.items()
+                                        if "actividad" in k or "estudio" in k or "carrera" in k
+                                    ),
+                                    None,
+                                )
+                                if act_val:
+                                    profile_parts.append(f"Actividad: {act_val}")
+
+                                # Ocupación
+                                occ_val = next(
+                                    (
+                                        v
+                                        for k, v in fact_dict.items()
+                                        if "ocupacion" in k
+                                        or "trabajo" in k
+                                        or "profesion" in k
+                                        or "empleo" in k
+                                    ),
+                                    None,
+                                )
+                                if occ_val:
+                                    profile_parts.append(f"Ocupación: {occ_val}")
+
+                                if profile_parts:
+                                    ans = "Perfil de usuario: " + " | ".join(profile_parts) + "."
+                                    print(
+                                        "  ⚡ [FAST-PATH]: Perfil estructurado de memoria "
+                                        "(0 llamadas LLM)"
+                                    )
+                                    print(f"[AURA]: {ans}")
+                                    self._speak(ans)
+                                    memory_answered = True
+
+                            if not memory_answered and top_fact and top_fact.confidence >= 0.50:
+                                from ..memory.retrieval import normalize_text
+
+                                norm_pred = normalize_text(top_fact.predicate)
+                                val = top_fact.object_val
+
+                                if "edad" in norm_pred or "anos" in norm_pred:
+                                    ans = f"Tienes {val} años."
+                                elif "ciudad" in norm_pred or "vivo" in norm_pred:
+                                    ans = f"Vives en {val}."
+                                elif "nombre" in norm_pred:
+                                    ans = f"Tu nombre es {val}."
+                                elif (
+                                    "ocupacion" in norm_pred
+                                    or "trabajo" in norm_pred
+                                    or "profesion" in norm_pred
+                                    or "empleo" in norm_pred
+                                ):
+                                    ans = f"Trabajas como {val}."
+                                elif (
+                                    "actividad" in norm_pred
+                                    or "estudio" in norm_pred
+                                    or "carrera" in norm_pred
+                                ):
+                                    ans = f"Tu actividad es {val}."
+                                else:
+                                    ans = f"Tu {top_fact.predicate} es {val}."
+
                                 print(
                                     "  ⚡ [FAST-PATH]: Hecho recuperado de memoria "
                                     f"(0 llamadas LLM, conf={top_fact.confidence:.2f})"
@@ -216,7 +336,7 @@ class AutonomousVoiceAgent:
                                 print(f"[AURA]: {ans}")
                                 self._speak(ans)
                                 memory_answered = True
-                            elif top_pref:
+                            elif not memory_answered and top_pref:
                                 ans = f"Tu preferencia para {top_pref.key} es {top_pref.value}."
                                 print(
                                     "  ⚡ [FAST-PATH]: Preferencia recuperada de memoria "

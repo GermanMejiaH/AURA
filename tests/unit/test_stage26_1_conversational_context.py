@@ -89,7 +89,8 @@ def test_working_memory_boot_hydration(tmp_path):
 
 
 def test_cognition_module_boot_hydrates_working_memory(tmp_path):
-    """Verify CognitionModule.on_initialize() automatically hydrates WorkingMemory when container has SQLiteMemoryStore."""
+    """Verify CognitionModule.on_initialize() automatically hydrates WorkingMemory
+    when container has SQLiteMemoryStore."""
     db_file = str(tmp_path / "test_aura.db")
     store = SQLiteMemoryStore(db_path=db_file)
 

@@ -120,13 +120,15 @@ class OpenAILLMProvider(LLMProvider):
             content = response.choices[0].message.content or ""
             usage = getattr(response, "usage", None)
 
+            from .context import estimate_tokens
+
             prompt_tokens = self._to_int(getattr(usage, "prompt_tokens", 0))
             if prompt_tokens <= 0:
-                prompt_tokens = len(system_content + prompt) // 4
+                prompt_tokens = estimate_tokens(system_content + prompt)
 
             completion_tokens = self._to_int(getattr(usage, "completion_tokens", 0))
             if completion_tokens <= 0:
-                completion_tokens = len(content) // 4
+                completion_tokens = estimate_tokens(content)
 
             tokens = self._to_int(getattr(usage, "total_tokens", 0))
             if tokens <= 0:

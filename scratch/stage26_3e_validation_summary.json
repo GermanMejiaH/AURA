@@ -1,0 +1,104 @@
+{
+  "phase1": {
+    "all_passed": true,
+    "queries": [
+      {
+        "query": "¿Cuántos años tengo?",
+        "fastpath_active": true
+      },
+      {
+        "query": "Qué edad tengo",
+        "fastpath_active": true
+      },
+      {
+        "query": "Dime mi edad",
+        "fastpath_active": true
+      },
+      {
+        "query": "Recuerdas mi edad",
+        "fastpath_active": true
+      },
+      {
+        "query": "Dónde vivo",
+        "fastpath_active": true
+      },
+      {
+        "query": "En qué ciudad vivo",
+        "fastpath_active": true
+      },
+      {
+        "query": "Recuerdas dónde vivo",
+        "fastpath_active": true
+      },
+      {
+        "query": "Qué estudio",
+        "fastpath_active": true
+      },
+      {
+        "query": "Qué estoy estudiando",
+        "fastpath_active": true
+      },
+      {
+        "query": "Recuerdas qué estudio",
+        "fastpath_active": true
+      },
+      {
+        "query": "Dónde trabajo",
+        "fastpath_active": true
+      },
+      {
+        "query": "En qué trabajo",
+        "fastpath_active": true
+      },
+      {
+        "query": "Cuál es mi ocupación",
+        "fastpath_active": true
+      },
+      {
+        "query": "A qué me dedico",
+        "fastpath_active": true
+      }
+    ]
+  },
+  "phase2": {
+    "all_structured": true,
+    "outputs": [
+      {
+        "query": "¿Quién soy?",
+        "response": "Perfil de usuario: Nombre: Andrés | Edad: 26 | Ciudad: Medellín | Actividad: Ingeniería de Software | Ocupación: Desarrollador."
+      },
+      {
+        "query": "Qué recuerdas de mí",
+        "response": "Perfil de usuario: Nombre: Andrés | Edad: 26 | Ciudad: Medellín | Actividad: Ingeniería de Software | Ocupación: Desarrollador."
+      },
+      {
+        "query": "Háblame de mí",
+        "response": "Perfil de usuario: Nombre: Andrés | Edad: 26 | Ciudad: Medellín | Actividad: Ingeniería de Software | Ocupación: Desarrollador."
+      }
+    ]
+  },
+  "phase3": {
+    "all_gated": true,
+    "declarative_evals": [
+      {
+        "statement": "Soy Andrés",
+        "tools_injected": 0
+      },
+      {
+        "statement": "Tengo 26 años",
+        "tools_injected": 0
+      },
+      {
+        "statement": "Vivo en Medellín",
+        "tools_injected": 0
+      }
+    ],
+    "tool_request_tools_injected": 1
+  },
+  "phase4": {
+    "estimated": 248,
+    "exact_bpe": 248,
+    "variance_pct": 0.0,
+    "passed": true
+  }
+}

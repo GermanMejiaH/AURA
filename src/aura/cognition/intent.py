@@ -87,19 +87,47 @@ class ControlIntentDetector:
         r"\bcu[aá]l\s+es\s+mi\b",
         r"\bc[oó]mo\s+me\s+llamo\b",
         r"\bqui[eé]n\s+soy\b",
-        r"\bqu[eé]\s+sabes\s+de\s+m[ií]\b",
+        r"\bqu[eé]\s+sabes\s+(?:de|sobre)\s+m[ií]\b",
         r"\bsabes\s+cu[aá]l\s+es\s+mi\b",
+        r"\bh[aá]blame\s+de\s+m[ií]\b",
+        r"\bqu[eé]\s+recuerdas\s+de\s+m[ií]\b",
+        # AGE
+        r"\bcu[aá]ntos\s+a[nñ]os\s+tengo\b",
+        r"\bqu[eé]\s+edad\s+tengo\b",
+        r"\bdime\s+mi\s+edad\b",
+        r"\brecuerdas\s+mi\s+edad\b",
+        # LOCATION
+        r"\bd[oó]nde\s+vivo\b",
+        r"\ben\s+qu[eé]\s+ciudad\s+vivo\b",
+        r"\brecuerdas\s+d[oó]nde\s+vivo\b",
+        # STUDIES
+        r"\bqu[eé]\s+(?:estudio|estudi[eé]|estoy\s+estudiando)\b",
+        r"\brecuerdas\s+qu[eé]\s+estudio\b",
+        # WORK
+        r"\bd[oó]nde\s+trabajo\b",
+        r"\ben\s+qu[eé]\s+trabajo\b",
+        r"\bcu[aá]l\s+es\s+mi\s+ocupaci[oó]n\b",
+        r"\ba\s+qu[eé]\s+me\s+dedico\b",
     )
 
     @classmethod
     def normalize_text(cls, text: str | Any) -> str:
-        """Strips punctuation, symbols, and collapses whitespace."""
+        """Strips punctuation, symbols, collapses whitespace,
+        and normalizes Whisper STT variants."""
         if not text or not isinstance(text, str):
             return ""
         # Remove common punctuation symbols
         cleaned = re.sub(r"[^\w\sáéíóúñÁÉÍÓÚÑ]", " ", text.strip().lower())
         # Collapse multiple spaces into single space
-        return re.sub(r"\s+", " ", cleaned).strip()
+        norm = re.sub(r"\s+", " ", cleaned).strip()
+
+        # STT Whisper phonetic normalization rules
+        norm = re.sub(r"\bdon\s+de\b", "donde", norm)
+        norm = re.sub(r"\banios\b", "anos", norm)
+        norm = re.sub(r"\bkien\b", "quien", norm)
+        norm = re.sub(r"\bsoi\b", "soy", norm)
+        norm = re.sub(r"\byamo\b", "llamo", norm)
+        return norm
 
     @classmethod
     def is_exit(cls, input_text: str) -> bool:

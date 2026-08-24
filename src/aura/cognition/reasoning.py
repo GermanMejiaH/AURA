@@ -48,6 +48,19 @@ class ReasoningEngine:
             system_prompt = cognitive_context.to_system_prompt()
             formatted_prompt = cognitive_context.to_formatted_prompt()
 
+            try:
+                from ..logging import get_logger
+
+                r_logger = get_logger("ReasoningEngine")
+                final_toks = cognitive_context.get_total_prompt_tokens()
+                r_logger.info(
+                    f"[CONTEXT FINAL] system_prompt_len={len(system_prompt)} "
+                    f"formatted_prompt_len={len(formatted_prompt)} "
+                    f"total_prompt_tokens={final_toks}"
+                )
+            except Exception:
+                pass
+
             llm_res = self.llm_provider.generate_response(
                 prompt=formatted_prompt,
                 system_instruction=system_prompt,

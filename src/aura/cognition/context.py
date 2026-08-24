@@ -15,6 +15,20 @@ if TYPE_CHECKING:
     from .session import SessionContext
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimates BPE tokens using tiktoken if available, or accurate BPE character density ratio."""
+    if not text:
+        return 0
+    try:
+        import tiktoken  # type: ignore[import-not-found]
+
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        # Realistic BPE ratio for Spanish text & markdown syntax (~3.2 chars/token)
+        return max(1, int(len(text) / 3.2))
+
+
 def get_max_history_turns(intent: Any | None, input_text: str = "") -> int:
     """Calculates adaptive conversation history window based on intent and input text."""
     intent_type_str = ""
@@ -40,17 +54,32 @@ def get_max_history_turns(intent: Any | None, input_text: str = "") -> int:
         "hi",
         "hello",
     )
+
+    if any(
+        kw in input_lower
+        for kw in (
+            "resumir",
+            "resumen",
+            "recap",
+            "summary",
+            "historial",
+            "anterior",
+            "conversación",
+        )
+    ):
+        return 12
+
     if input_lower in casual_greetings or intent_type_str in (
         "GREET",
         "GREETING",
         "SALUTATION",
         "SMALLTALK",
     ):
-        return 1
-    elif intent_type_str in ("QUESTION", "INFORMATIONAL", "CONFIRMATION", "CANCELLATION"):
         return 2
-    elif intent_type_str in ("TASK_REQUEST", "PLAN", "GOAL", "COMMAND", "AUTONOMY", "ACTION"):
+    elif intent_type_str in ("QUESTION", "INFORMATIONAL", "CONFIRMATION", "CANCELLATION"):
         return 6
+    elif intent_type_str in ("TASK_REQUEST", "PLAN", "GOAL", "COMMAND", "AUTONOMY", "ACTION"):
+        return 8
     elif intent_type_str in (
         "REFLECT",
         "LEARN",
@@ -58,10 +87,8 @@ def get_max_history_turns(intent: Any | None, input_text: str = "") -> int:
         "AUTOBIOGRAPHICAL",
         "MEMORY_UPDATE",
     ):
-        return 8
-    else:
-        # Default natural conversation (max 4 turns: 2 user + 2 assistant)
-        return 4
+        return 12
+    return 4
 
 
 @dataclass
@@ -204,6 +231,13 @@ class CognitiveContext:
 
         parts.append(f"Usuario: {self.user_input}")
         return "\n".join(parts)
+
+    def get_total_prompt_tokens(self) -> int:
+        """Calculates final total prompt token count across system prompt
+        and formatted user prompt."""
+        sys_p = self.to_system_prompt()
+        fmt_p = self.to_formatted_prompt()
+        return estimate_tokens(sys_p + fmt_p)
 
 
 class CognitiveContextBuilder:
@@ -355,8 +389,42 @@ class CognitiveContextBuilder:
                             limit=3,
                         )
 
-                # 4. Pull Tools metadata if non-casual
-                if not is_casual:
+                tool_intents = (
+                    "TASK_REQUEST",
+                    "COMMAND",
+                    "ACTION",
+                    "TOOL_USE",
+                    "PLAN",
+                    "GOAL",
+                    "INFORMATION_REQUEST",
+                )
+                tool_keywords = (
+                    "alarma",
+                    "temporizador",
+                    "timer",
+                    "recordatorio",
+                    "notificación",
+                    "notificacion",
+                    "buscar",
+                    "búscame",
+                    "buscame",
+                    "search",
+                    "clima",
+                    "tiempo",
+                    "ejecutar",
+                    "comando",
+                    "sistema",
+                    "archivos",
+                    "apagar",
+                    "prender",
+                    "crear plan",
+                )
+                requires_tools = intent_name in tool_intents or any(
+                    kw in input_lower for kw in tool_keywords
+                )
+
+                # 4. Pull Tools metadata ONLY if input/intent requires tool orchestration
+                if requires_tools:
                     from ..tools import ToolRegistry
 
                     if self.container.has(ToolRegistry):
@@ -408,21 +476,21 @@ class CognitiveContextBuilder:
             sel_hist = hist_src[-max_h:] if hist_src else []
             h_turns = len(sel_hist)
             h_text = " ".join(str(t.get("content", "")) for t in sel_hist)
-            h_tokens = len(h_text) // 4
+            h_tokens = estimate_tokens(h_text)
             mem_text = " ".join(relevant_memories)
-            mem_tokens = len(mem_text) // 4
+            mem_tokens = estimate_tokens(mem_text)
             ep_text = " ".join(getattr(ep, "summary", "") for ep in relevant_episodes)
-            ep_tokens = len(ep_text) // 4
+            ep_tokens = estimate_tokens(ep_text)
             goal_text = " ".join(getattr(pg.goal, "description", "") for pg in prioritized_goals)
-            goal_tokens = len(goal_text) // 4
+            goal_tokens = estimate_tokens(goal_text)
             tool_text = " ".join(
                 t.get("name", "") + " " + t.get("description", "") for t in available_tools
             )
-            tool_tokens = len(tool_text) // 4
+            tool_tokens = estimate_tokens(tool_text)
 
             sys_p = ctx_obj.to_system_prompt()
             fmt_p = ctx_obj.to_formatted_prompt()
-            tot_p_tokens = len(sys_p + fmt_p) // 4
+            tot_p_tokens = estimate_tokens(sys_p + fmt_p)
 
             b_logger.info(
                 f"[CONTEXT BUILD] history_turns={h_turns} history_tokens={h_tokens} "

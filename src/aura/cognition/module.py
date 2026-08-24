@@ -135,7 +135,8 @@ class CognitionModule(BaseModule):
                 hydrated_count = self.working_memory.hydrate_from_db(store=target_store)
                 if hydrated_count > 0:
                     logger.info(
-                        f"Hydrated WorkingMemory with {hydrated_count} turns from persistent SQLite session"
+                        f"Hydrated WorkingMemory with {hydrated_count} turns "
+                        "from persistent SQLite session"
                     )
 
         logger.info(

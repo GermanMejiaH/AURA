@@ -63,6 +63,7 @@ CONCEPT_ALIASES: dict[str, set[str]] = {
         "estudiando",
         "estudio",
         "estudiar",
+        "estudie",
         "trabajo",
         "trabajando",
         "haciendo",
@@ -335,7 +336,16 @@ class MemoryRetrievalEngine:
         for p in all_prefs:
             s = self.score_preference(p, query_tokens, is_open_recall=is_open)
             if s > 0.1:
-                pref_scores.append((s, p))
+                # If not an open recall query, require key or concept alias match for preferences
+                from .canonicalization import canonicalize_key
+
+                canon_k = canonicalize_key(p.key)
+                norm_k = normalize_text(canon_k)
+                aliases = CONCEPT_ALIASES.get(canon_k, set()) | CONCEPT_ALIASES.get(p.key, set())
+                has_key_match = norm_k in query_tokens or any(t in aliases for t in query_tokens)
+
+                if is_open or has_key_match:
+                    pref_scores.append((s, p))
 
         pref_scores.sort(key=lambda x: x[0], reverse=True)
 

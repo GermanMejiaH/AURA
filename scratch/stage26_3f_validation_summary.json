@@ -1,0 +1,82 @@
+{
+  "defect1": {
+    "query": "¿Cuál es mi ocupación?",
+    "response": "Trabajas como desarrollador.",
+    "facts": [
+      [
+        "ocupación",
+        "desarrollador"
+      ]
+    ],
+    "prefs": [],
+    "passed": true
+  },
+  "defect2": {
+    "all_passed": true,
+    "outputs": [
+      {
+        "query": "¿Qué sabes de mí?",
+        "response": "Perfil de usuario: Nombre: Andrés | Edad: 26 | Ciudad: Medellín | Actividad: ingeniería de software | Ocupación: desarrollador.",
+        "parts_count": 5
+      },
+      {
+        "query": "¿Quién soy?",
+        "response": "Perfil de usuario: Nombre: Andrés | Edad: 26 | Ciudad: Medellín | Actividad: ingeniería de software | Ocupación: desarrollador.",
+        "parts_count": 5
+      }
+    ]
+  },
+  "defect3": {
+    "all_passed": true,
+    "results": [
+      {
+        "text": "Don De Vivo",
+        "normalized": "donde vivo",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      },
+      {
+        "text": "don de vivo",
+        "normalized": "donde vivo",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      },
+      {
+        "text": "¿Dónde vivo?",
+        "normalized": "dónde vivo",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      },
+      {
+        "text": "cuantos anios tengo",
+        "normalized": "cuantos anos tengo",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      },
+      {
+        "text": "¿Qué estudié?",
+        "normalized": "qué estudié",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      },
+      {
+        "text": "Donde trabajo",
+        "normalized": "donde trabajo",
+        "fastpath": true,
+        "expected": true,
+        "passed": true
+      }
+    ]
+  },
+  "defect4_5": {
+    "estimated_toks": 246,
+    "exact_bpe": 246,
+    "variance_pct": 0.0,
+    "passed": true
+  }
+}
