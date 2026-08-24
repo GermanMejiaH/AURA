@@ -1,0 +1,249 @@
+{
+  "phase1_phase2": {
+    "extractions": [
+      {
+        "statement": "Soy Andrés.",
+        "detected": true,
+        "predicate": "nombre",
+        "object_val": "Andrés",
+        "persisted": true
+      },
+      {
+        "statement": "Tengo 26 años.",
+        "detected": true,
+        "predicate": "edad",
+        "object_val": "26",
+        "persisted": true
+      },
+      {
+        "statement": "Vivo en Medellín.",
+        "detected": true,
+        "predicate": "ciudad",
+        "object_val": "Medellín",
+        "persisted": true
+      },
+      {
+        "statement": "Estudio ingeniería de software.",
+        "detected": true,
+        "predicate": "actividad",
+        "object_val": "estudiando ingeniería de software",
+        "persisted": true
+      },
+      {
+        "statement": "Trabajo como desarrollador.",
+        "detected": true,
+        "predicate": "ocupacion",
+        "object_val": "desarrollador",
+        "persisted": true
+      }
+    ],
+    "retrievals": [
+      {
+        "query": "¿Qué recuerdas de mí?",
+        "facts_count": 5,
+        "facts": [
+          "actividad=estudiando ingeniería de software",
+          "nombre=Andrés",
+          "edad=26",
+          "ciudad=Medellín",
+          "ocupacion=desarrollador"
+        ]
+      },
+      {
+        "query": "¿Quién soy?",
+        "facts_count": 5,
+        "facts": [
+          "nombre=Andrés",
+          "edad=26",
+          "ciudad=Medellín",
+          "actividad=estudiando ingeniería de software",
+          "ocupacion=desarrollador"
+        ]
+      },
+      {
+        "query": "¿Cuántos años tengo?",
+        "facts_count": 0,
+        "facts": []
+      },
+      {
+        "query": "¿Dónde vivo?",
+        "facts_count": 0,
+        "facts": []
+      },
+      {
+        "query": "¿Qué estudio?",
+        "facts_count": 1,
+        "facts": [
+          "actividad=estudiando ingeniería de software"
+        ]
+      }
+    ]
+  },
+  "phase3": {
+    "stats": {
+      "casual": {
+        "avg_prompt_tokens": 193.3,
+        "max_prompt_tokens": 195,
+        "avg_history_turns": 0.0,
+        "avg_memory_tokens": 0.0,
+        "avg_episode_tokens": 0.0,
+        "avg_goal_tokens": 0.0,
+        "avg_tool_tokens": 0.0,
+        "limit": 500,
+        "passed": true
+      },
+      "factual": {
+        "avg_prompt_tokens": 197.2,
+        "max_prompt_tokens": 199,
+        "avg_history_turns": 0.0,
+        "avg_memory_tokens": 0.0,
+        "avg_episode_tokens": 0.0,
+        "avg_goal_tokens": 0.0,
+        "avg_tool_tokens": 0.0,
+        "limit": 700,
+        "passed": true
+      },
+      "memory": {
+        "avg_prompt_tokens": 196.2,
+        "max_prompt_tokens": 198,
+        "avg_history_turns": 0.0,
+        "avg_memory_tokens": 0.0,
+        "avg_episode_tokens": 0.0,
+        "avg_goal_tokens": 0.0,
+        "avg_tool_tokens": 0.0,
+        "limit": 1200,
+        "passed": true
+      },
+      "planning": {
+        "avg_prompt_tokens": 199.6,
+        "max_prompt_tokens": 202,
+        "avg_history_turns": 0.0,
+        "avg_memory_tokens": 0.0,
+        "avg_episode_tokens": 0.0,
+        "avg_goal_tokens": 0.0,
+        "avg_tool_tokens": 0.0,
+        "limit": 1500,
+        "passed": true
+      }
+    },
+    "worst_case": {
+      "prompt": "planifica el respaldo de la base de datos",
+      "tokens": 202,
+      "category": "planning"
+    }
+  },
+  "phase4": {
+    "full_persisted_turns": 104,
+    "rendered_turns_count": 2,
+    "passed": true
+  },
+  "phase5": {
+    "snapshots": [
+      {
+        "minute": 1,
+        "prompt_tokens": 227,
+        "completion_tokens": 20,
+        "latency_ms": 0.14,
+        "rendered_history_turns": 1
+      },
+      {
+        "minute": 2,
+        "prompt_tokens": 254,
+        "completion_tokens": 20,
+        "latency_ms": 0.12,
+        "rendered_history_turns": 3
+      },
+      {
+        "minute": 3,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.15,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 4,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.11,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 5,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.1,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 6,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.14,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 7,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.1,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 8,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.1,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 9,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.1,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 10,
+        "prompt_tokens": 265,
+        "completion_tokens": 20,
+        "latency_ms": 0.1,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 11,
+        "prompt_tokens": 266,
+        "completion_tokens": 20,
+        "latency_ms": 0.09,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 12,
+        "prompt_tokens": 266,
+        "completion_tokens": 20,
+        "latency_ms": 0.09,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 13,
+        "prompt_tokens": 266,
+        "completion_tokens": 20,
+        "latency_ms": 0.11,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 14,
+        "prompt_tokens": 266,
+        "completion_tokens": 20,
+        "latency_ms": 0.13,
+        "rendered_history_turns": 4
+      },
+      {
+        "minute": 15,
+        "prompt_tokens": 266,
+        "completion_tokens": 20,
+        "latency_ms": 0.11,
+        "rendered_history_turns": 4
+      }
+    ]
+  }
+}

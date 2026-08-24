@@ -39,6 +39,11 @@ class TelemetryManager:
             "memory_writes": 0,
             "speech_events_detected": 0,
             "autonomy_cycles": 0,
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "max_prompt_tokens": 0,
+            "max_completion_tokens": 0,
+            "token_record_count": 0,
         }
         self._latencies: dict[str, LatencyMetric] = {
             "time_stt_ms": LatencyMetric("time_stt_ms"),
@@ -50,6 +55,39 @@ class TelemetryManager:
         }
         self._interactions: list[InteractionRecord] = []
         self._max_interactions: int = 100
+
+    def record_token_usage(self, prompt_tokens: int, completion_tokens: int) -> None:
+        """Records token usage for LLM calls thread-safely."""
+        with self._lock:
+            self._counters["total_prompt_tokens"] = (
+                self._counters.get("total_prompt_tokens", 0) + prompt_tokens
+            )
+            self._counters["total_completion_tokens"] = (
+                self._counters.get("total_completion_tokens", 0) + completion_tokens
+            )
+            self._counters["token_record_count"] = self._counters.get("token_record_count", 0) + 1
+            if prompt_tokens > self._counters.get("max_prompt_tokens", 0):
+                self._counters["max_prompt_tokens"] = prompt_tokens
+            if completion_tokens > self._counters.get("max_completion_tokens", 0):
+                self._counters["max_completion_tokens"] = completion_tokens
+
+    def get_token_stats(self) -> dict[str, Any]:
+        """Returns token usage summary metrics (avg and max)."""
+        with self._lock:
+            cnt = self._counters.get("token_record_count", 0)
+            tot_p = self._counters.get("total_prompt_tokens", 0)
+            tot_c = self._counters.get("total_completion_tokens", 0)
+            avg_p = round(tot_p / cnt, 1) if cnt > 0 else 0.0
+            avg_c = round(tot_c / cnt, 1) if cnt > 0 else 0.0
+            return {
+                "avg_prompt_tokens": avg_p,
+                "avg_completion_tokens": avg_c,
+                "max_prompt_tokens": self._counters.get("max_prompt_tokens", 0),
+                "max_completion_tokens": self._counters.get("max_completion_tokens", 0),
+                "total_prompt_tokens": tot_p,
+                "total_completion_tokens": tot_c,
+                "token_record_count": cnt,
+            }
 
     def increment(self, metric_name: str, amount: int = 1) -> None:
         """Increments a counter metric thread-safely."""
@@ -215,6 +253,7 @@ class TelemetryManager:
                 "timestamp": ts_str,
                 "counters": dict(self._counters),
                 "latencies": latencies_dict,
+                "token_stats": self.get_token_stats(),
                 "recent_interactions_count": len(self._interactions),
             }
 

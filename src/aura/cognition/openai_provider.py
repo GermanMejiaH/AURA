@@ -12,6 +12,8 @@ class OpenAILLMProvider(LLMProvider):
     Provides ultra-fast, intelligent cloud or local reasoning for AURA.
     """
 
+    DEFAULT_CONVERSATION_MAX_TOKENS = 150
+
     SYSTEM_IDENTITY = (
         "Eres AURA (Adaptive Unified Reasoning Assistant), un asistente cognitivo inteligente "
         "y autónomo. Eres conversacional, conciso y siempre respondes en español de forma natural. "
@@ -24,7 +26,7 @@ class OpenAILLMProvider(LLMProvider):
         base_url: str | None = None,
         model_name: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 512,
+        max_tokens: int = DEFAULT_CONVERSATION_MAX_TOKENS,
     ) -> None:
         from pathlib import Path
 
@@ -77,19 +79,27 @@ class OpenAILLMProvider(LLMProvider):
             )
         return self._client
 
+    @staticmethod
+    def _to_int(val: Any) -> int:
+        return int(val) if isinstance(val, (int, float)) else 0
+
     def generate_response(
         self,
         prompt: str,
         system_instruction: str = "",
         context: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Generates a response using the OpenAI-compatible REST API."""
         import time
 
+        from ..logging import get_logger
         from ..telemetry import TelemetryManager
 
+        logger = get_logger("OpenAILLMProvider")
         telemetry = TelemetryManager.get_instance()
         start_t = time.perf_counter()
+        req_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
 
         try:
             client = self._get_client()
@@ -104,11 +114,31 @@ class OpenAILLMProvider(LLMProvider):
                 model=self.model_name,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens=req_max_tokens,
             )
 
             content = response.choices[0].message.content or ""
-            tokens = getattr(getattr(response, "usage", None), "total_tokens", len(content) // 4)
+            usage = getattr(response, "usage", None)
+
+            prompt_tokens = self._to_int(getattr(usage, "prompt_tokens", 0))
+            if prompt_tokens <= 0:
+                prompt_tokens = len(system_content + prompt) // 4
+
+            completion_tokens = self._to_int(getattr(usage, "completion_tokens", 0))
+            if completion_tokens <= 0:
+                completion_tokens = len(content) // 4
+
+            tokens = self._to_int(getattr(usage, "total_tokens", 0))
+            if tokens <= 0:
+                tokens = prompt_tokens + completion_tokens
+
+            logger.info(
+                f"[LLM TOKENS] prompt_tokens={prompt_tokens} "
+                f"max_tokens={req_max_tokens} completion_tokens={completion_tokens}"
+            )
+            telemetry.record_token_usage(
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+            )
 
             elapsed_ms = (time.perf_counter() - start_t) * 1000
             telemetry.increment("llm_calls_total")
@@ -173,15 +203,27 @@ class OpenAILLMProvider(LLMProvider):
                             model=self.model_name,
                             messages=messages,
                             temperature=self.temperature,
-                            max_tokens=self.max_tokens,
+                            max_tokens=req_max_tokens,
                         )
                         content = response.choices[0].message.content or ""
-                        tokens = getattr(
-                            getattr(response, "usage", None), "total_tokens", len(content) // 4
+                        retry_usage = getattr(response, "usage", None)
+                        p_toks = self._to_int(getattr(retry_usage, "prompt_tokens", 0))
+                        if p_toks <= 0:
+                            p_toks = len(system_content + prompt) // 4
+                        c_toks = self._to_int(getattr(retry_usage, "completion_tokens", 0))
+                        if c_toks <= 0:
+                            c_toks = len(content) // 4
+                        tot_toks = self._to_int(getattr(retry_usage, "total_tokens", 0))
+                        if tot_toks <= 0:
+                            tot_toks = p_toks + c_toks
+                        logger.info(
+                            f"[LLM TOKENS] prompt_tokens={p_toks} "
+                            f"max_tokens={req_max_tokens} completion_tokens={c_toks}"
                         )
+                        telemetry.record_token_usage(prompt_tokens=p_toks, completion_tokens=c_toks)
                         return LLMResponse(
                             content=content.strip(),
-                            tokens_used=tokens,
+                            tokens_used=tot_toks,
                             raw_response=response,
                         )
                     except Exception as retry_exc:

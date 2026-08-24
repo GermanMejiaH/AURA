@@ -28,6 +28,7 @@ class LLMProvider(ABC):
         prompt: str,
         system_instruction: str = "",
         context: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse: ...
 
     @abstractmethod
@@ -116,8 +117,16 @@ class MockLLMProvider(LLMProvider):
         prompt: str,
         system_instruction: str = "",
         context: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
-        self.calls.append({"prompt": prompt, "system": system_instruction, "context": context})
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "system": system_instruction,
+                "context": context,
+                "max_tokens": max_tokens,
+            }
+        )
         return LLMResponse(
             content=f"{self.default_response} [Prompt: {prompt[:30]}...]",
             tokens_used=15,

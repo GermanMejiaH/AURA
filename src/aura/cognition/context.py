@@ -11,7 +11,57 @@ if TYPE_CHECKING:
     from ..memory.models import Episode
     from .goals import PrioritizedGoal
     from .identity import AURAIdentity
+    from .intent import Intent
     from .session import SessionContext
+
+
+def get_max_history_turns(intent: Any | None, input_text: str = "") -> int:
+    """Calculates adaptive conversation history window based on intent and input text."""
+    intent_type_str = ""
+    if intent is not None:
+        intent_type = getattr(intent, "intent_type", intent)
+        intent_type_str = (
+            intent_type.value if hasattr(intent_type, "value") else str(intent_type or "")
+        ).upper()
+
+    input_lower = input_text.lower().strip()
+    casual_greetings = (
+        "hola",
+        "hola aura",
+        "saludos",
+        "buenos días",
+        "buenas noches",
+        "buenas tardes",
+        "gracias",
+        "de nada",
+        "cómo estás",
+        "como estas",
+        "hey",
+        "hi",
+        "hello",
+    )
+    if input_lower in casual_greetings or intent_type_str in (
+        "GREET",
+        "GREETING",
+        "SALUTATION",
+        "SMALLTALK",
+    ):
+        return 1
+    elif intent_type_str in ("QUESTION", "INFORMATIONAL", "CONFIRMATION", "CANCELLATION"):
+        return 2
+    elif intent_type_str in ("TASK_REQUEST", "PLAN", "GOAL", "COMMAND", "AUTONOMY", "ACTION"):
+        return 6
+    elif intent_type_str in (
+        "REFLECT",
+        "LEARN",
+        "MEMORY_QUERY",
+        "AUTOBIOGRAPHICAL",
+        "MEMORY_UPDATE",
+    ):
+        return 8
+    else:
+        # Default natural conversation (max 4 turns: 2 user + 2 assistant)
+        return 4
 
 
 @dataclass
@@ -31,6 +81,7 @@ class CognitiveContext:
     identity: AURAIdentity | None = None
     session_context: SessionContext | None = None
     conversation_context: ConversationContext | None = None
+    intent: Any | None = None
 
     def to_system_prompt(self) -> str:
         """Formats identity, background context, memory, tools, and results into prompt."""
@@ -67,12 +118,6 @@ class CognitiveContext:
                     parts.append("[REFERENCIA ACTIVA]: AMBIGUA — SE REQUIERE ACLARACIÓN")
                 elif anaphora.resolved_entity:
                     parts.append(f"[REFERENCIA ACTIVA]: {anaphora.resolved_entity}")
-
-            if self.conversation_context.relevant_turns:
-                parts.append("\n[CONTEXTO CONVERSACIONAL RELEVANTE]:")
-                for turn in self.conversation_context.relevant_turns:
-                    role = "Usuario" if turn.get("role") == "user" else "AURA"
-                    parts.append(f"  [{role}]: {turn.get('content', '')}")
 
         if self.available_tools:
             names = [f"'{t.get('name')}'" for t in self.available_tools if t.get("name")]
@@ -150,8 +195,9 @@ class CognitiveContext:
         )
 
         if history_source:
+            max_h_turns = get_max_history_turns(self.intent, self.user_input)
             parts.append("Historial conversacional reciente:")
-            for turn in history_source[-12:]:
+            for turn in history_source[-max_h_turns:]:
                 role = "Usuario" if turn.get("role") == "user" else "AURA"
                 parts.append(f"  [{role}]: {turn.get('content', '')}")
             parts.append("")
@@ -185,6 +231,7 @@ class CognitiveContextBuilder:
         system_instruction: str = "",
         working_memory: WorkingMemory | None = None,
         conversation_context: ConversationContext | None = None,
+        intent: Intent | None = None,
     ) -> CognitiveContext:
         instruction = system_instruction or self.DEFAULT_INSTRUCTION
 
@@ -199,6 +246,8 @@ class CognitiveContextBuilder:
         available_tools: list[dict[str, str]] = []
         identity_obj = None
         session_obj = None
+
+        detected_intent = intent
 
         if self.container is not None:
             # Pull IdentityManager if available
@@ -219,26 +268,73 @@ class CognitiveContextBuilder:
             except Exception:
                 pass
 
-            # Pull CWM entities if available
+        if detected_intent is None and self.container is not None:
             try:
-                from ..world import CognitiveWorldModel
+                from .intent import IntentDetector
 
-                if self.container.has(CognitiveWorldModel):
-                    cwm = self.container.resolve(CognitiveWorldModel)
-                    world_entities = [
-                        f"{e.name} ({getattr(e.type, 'value', str(e.type))})"
-                        for e in cwm.all_entities()
-                    ]
+                if self.container.has(IntentDetector):
+                    detected_intent = self.container.resolve(IntentDetector).detect(input_text)
             except Exception:
                 pass
 
-            # Pull Memory facts/preferences if available and intent requires it
+        if detected_intent is None:
             try:
-                from ..memory import MemoryModule
                 from .intent import IntentDetector
 
                 detected_intent = IntentDetector.detect(input_text)
-                if IntentDetector.should_query_persistent_memory(detected_intent, input_text):
+            except Exception:
+                pass
+
+        if self.container is not None:
+            try:
+                from .intent import IntentDetector
+
+                intent_type = detected_intent.intent_type if detected_intent else None
+                intent_name = (
+                    intent_type.value
+                    if (intent_type and hasattr(intent_type, "value"))
+                    else str(intent_type or "")
+                ).upper()
+                input_lower = input_text.lower().strip()
+
+                casual_greetings = (
+                    "hola",
+                    "hola aura",
+                    "saludos",
+                    "buenos días",
+                    "buenas noches",
+                    "buenas tardes",
+                    "gracias",
+                    "de nada",
+                    "cómo estás",
+                    "como estas",
+                    "hey",
+                    "hi",
+                    "hello",
+                )
+                is_casual = input_lower in casual_greetings or intent_name in (
+                    "GREET",
+                    "SALUTATION",
+                    "SMALLTALK",
+                )
+
+                # 1. Pull CWM entities if non-casual or explicitly relevant
+                if not is_casual:
+                    from ..world import CognitiveWorldModel
+
+                    if self.container.has(CognitiveWorldModel):
+                        cwm = self.container.resolve(CognitiveWorldModel)
+                        world_entities = [
+                            f"{e.name} ({getattr(e.type, 'value', str(e.type))})"
+                            for e in cwm.all_entities()
+                        ]
+
+                # 2. Pull Persistent Memory facts/preferences if intent requires it
+                if detected_intent and IntentDetector.should_query_persistent_memory(
+                    detected_intent, input_text
+                ):
+                    from ..memory import MemoryModule
+
                     if self.container.has(MemoryModule):
                         mem = self.container.resolve(MemoryModule)
                         retrieval = mem.retrieval.query(input_text)
@@ -246,56 +342,45 @@ class CognitiveContextBuilder:
                             f"[{f.predicate} del {f.subject}]: {f.object_val}"
                             for f in retrieval.facts
                         ] + [f"[{p.key}]: {p.value}" for p in retrieval.preferences]
+
+                # 3. Pull Episodic Experiences if non-casual
+                if not is_casual:
+                    from ..memory import CognitiveContextManager
+
+                    if self.container.has(CognitiveContextManager):
+                        cog_ctx_mgr = self.container.resolve(CognitiveContextManager)
+                        relevant_episodes = cog_ctx_mgr.get_relevant_episodes(
+                            query=input_text,
+                            intent_type=intent_name,
+                            limit=3,
+                        )
+
+                # 4. Pull Tools metadata if non-casual
+                if not is_casual:
+                    from ..tools import ToolRegistry
+
+                    if self.container.has(ToolRegistry):
+                        reg = self.container.resolve(ToolRegistry)
+                        available_tools = [
+                            {"name": meta.name, "description": meta.description}
+                            for meta in reg.list_metadata()
+                        ]
+
+                # 5. Pull PersistentGoals if non-casual
+                if not is_casual:
+                    from .goals import GoalManager, GoalPrioritizer
+
+                    if self.container.has(GoalManager):
+                        goal_mgr = self.container.resolve(GoalManager)
+                        all_goals = goal_mgr.list_goals()
+                        if all_goals:
+                            prioritizer = GoalPrioritizer()
+                            prioritized_goals = prioritizer.prioritize(all_goals)
+
             except Exception:
                 pass
 
-            # Pull Episodic Experiences via CognitiveContextManager if available
-            try:
-                from ..memory import CognitiveContextManager
-                from .intent import IntentDetector
-
-                if self.container.has(CognitiveContextManager):
-                    detected_intent = IntentDetector.detect(input_text)
-                    intent_name = (
-                        detected_intent.intent_type.value
-                        if hasattr(detected_intent.intent_type, "value")
-                        else str(detected_intent.intent_type)
-                    )
-                    cog_ctx_mgr = self.container.resolve(CognitiveContextManager)
-                    relevant_episodes = cog_ctx_mgr.get_relevant_episodes(
-                        query=input_text,
-                        intent_type=intent_name,
-                        limit=3,
-                    )
-            except Exception:
-                pass
-
-            # Pull Tools metadata if available
-            try:
-                from ..tools import ToolRegistry
-
-                if self.container.has(ToolRegistry):
-                    reg = self.container.resolve(ToolRegistry)
-                    available_tools = [
-                        {"name": meta.name, "description": meta.description}
-                        for meta in reg.list_metadata()
-                    ]
-            except Exception:
-                pass
-
-            # Pull PersistentGoals via GoalManager & GoalPrioritizer if available
-            try:
-                from .goals import GoalManager, GoalPrioritizer
-
-                if self.container.has(GoalManager):
-                    goal_mgr = self.container.resolve(GoalManager)
-                    all_goals = goal_mgr.list_goals()
-                    prioritizer = GoalPrioritizer()
-                    prioritized_goals = prioritizer.prioritize(all_goals)
-            except Exception:
-                pass
-
-        return CognitiveContext(
+        ctx_obj = CognitiveContext(
             system_instruction=instruction,
             user_input=input_text,
             conversation_history=history,
@@ -307,4 +392,45 @@ class CognitiveContextBuilder:
             identity=identity_obj,
             session_context=session_obj,
             conversation_context=conversation_context,
+            intent=detected_intent,
         )
+
+        try:
+            from ..logging import get_logger
+
+            b_logger = get_logger("CognitiveContextBuilder")
+            max_h = get_max_history_turns(detected_intent, input_text)
+            hist_src = (
+                conversation_context.relevant_turns
+                if (conversation_context and conversation_context.relevant_turns)
+                else history
+            )
+            sel_hist = hist_src[-max_h:] if hist_src else []
+            h_turns = len(sel_hist)
+            h_text = " ".join(str(t.get("content", "")) for t in sel_hist)
+            h_tokens = len(h_text) // 4
+            mem_text = " ".join(relevant_memories)
+            mem_tokens = len(mem_text) // 4
+            ep_text = " ".join(getattr(ep, "summary", "") for ep in relevant_episodes)
+            ep_tokens = len(ep_text) // 4
+            goal_text = " ".join(getattr(pg.goal, "description", "") for pg in prioritized_goals)
+            goal_tokens = len(goal_text) // 4
+            tool_text = " ".join(
+                t.get("name", "") + " " + t.get("description", "") for t in available_tools
+            )
+            tool_tokens = len(tool_text) // 4
+
+            sys_p = ctx_obj.to_system_prompt()
+            fmt_p = ctx_obj.to_formatted_prompt()
+            tot_p_tokens = len(sys_p + fmt_p) // 4
+
+            b_logger.info(
+                f"[CONTEXT BUILD] history_turns={h_turns} history_tokens={h_tokens} "
+                f"memory_tokens={mem_tokens} episode_tokens={ep_tokens} "
+                f"goal_tokens={goal_tokens} tool_tokens={tool_tokens} "
+                f"total_prompt_tokens={tot_p_tokens}"
+            )
+        except Exception:
+            pass
+
+        return ctx_obj

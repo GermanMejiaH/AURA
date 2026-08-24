@@ -61,6 +61,7 @@ class GeminiLLMProvider(LLMProvider):
         prompt: str,
         system_instruction: str = "",
         context: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Generates text completion via Google Gemini model."""
         try:

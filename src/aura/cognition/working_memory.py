@@ -29,7 +29,9 @@ class WorkingMemory:
         self,
         default_ttl_seconds: float = 300.0,
         max_conversation_turns: int = 12,
+        container: Any | None = None,
     ) -> None:
+        self.container = container
         self.default_ttl = default_ttl_seconds
         self.max_conversation_turns = max_conversation_turns
         self._items: dict[str, WorkingMemoryItem] = {}
@@ -80,3 +82,43 @@ class WorkingMemory:
             self._items.clear()
             self._conversation_history.clear()
             self._active_goal = None
+
+    def hydrate_from_db(
+        self,
+        store: Any,
+        session_id: str | None = None,
+        limit: int = 12,
+    ) -> int:
+        """Hydrates conversation history from SQLite conversation_turns table into WorkingMemory."""
+        with self._lock:
+            try:
+                conn = store._get_connection()
+                if session_id is None:
+                    cur = conn.execute(
+                        "SELECT session_id FROM memory_sessions ORDER BY updated_at DESC LIMIT 1"
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        session_id = row["session_id"]
+                    else:
+                        return 0
+
+                cur = conn.execute(
+                    """
+                    SELECT role, content
+                    FROM conversation_turns
+                    WHERE session_id = ?
+                    ORDER BY timestamp DESC, turn_id DESC
+                    LIMIT ?
+                    """,
+                    (session_id, limit),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    return 0
+
+                turns = [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+                self._conversation_history = turns
+                return len(turns)
+            except Exception:
+                return 0

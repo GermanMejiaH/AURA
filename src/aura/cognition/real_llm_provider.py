@@ -28,6 +28,7 @@ class RealLLMProvider(LLMProvider):
         prompt: str,
         system_instruction: str = "Eres AURA, un asistente cognitivo inteligente y autónomo.",
         context: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Generates a text response using Ollama or REST API endpoint."""
         payload = {

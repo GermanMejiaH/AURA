@@ -664,6 +664,7 @@ def _handle_benchmark(aura: AURA) -> None:
     autonomy_cycles = all_counters.get("autonomy_cycles", 0)
 
     mem_success_rate = 100.0 if mem_reads > 0 else 0.0
+    token_stats = tm.get_token_stats()
 
     print("===================================")
     print("AURA BENCHMARK REPORT")
@@ -672,6 +673,11 @@ def _handle_benchmark(aura: AURA) -> None:
     print(f"Average Cognition Latency:  {avg_cog} ms")
     print(f"Average LLM Latency:      {avg_llm} ms")
     print(f"Average Turn Latency:     {avg_turn} ms")
+    print("")
+    print(f"Average Prompt Tokens:     {token_stats['avg_prompt_tokens']}")
+    print(f"Average Completion Tokens: {token_stats['avg_completion_tokens']}")
+    print(f"Largest Prompt Observed:   {token_stats['max_prompt_tokens']}")
+    print(f"Largest Completion:        {token_stats['max_completion_tokens']}")
     print("")
     print(f"FastPath Hit Rate:        {fp_hit_rate:.1f}%")
     print(f"LLM Calls per Turn:       {llm_per_turn:.2f}")

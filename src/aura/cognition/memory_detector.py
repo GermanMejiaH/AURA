@@ -76,6 +76,121 @@ class ExplicitMemoryDetector:
                 v_val = update_match.group(2).strip()
                 extracted_body = f"mi {raw_k} es {v_val}"
 
+        # 3B. Direct natural declarations without imperative prefix ("Recuerda que...")
+        if not extracted_body:
+            # A. Age: "Tengo 26 años" / "Tengo la edad de 26 años"
+            m_age = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"(?:tengo|cumplí|cumpli)\s+(?:la\s+edad\s+de\s+)?(\d{1,3})\s+años$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_age:
+                val_age = m_age.group(1).strip()
+                return ExplicitMemoryDirective(
+                    detected=True,
+                    subject="usuario",
+                    predicate="edad",
+                    object_val=val_age,
+                    raw_statement=cleaned,
+                    confirmation_response=f"Claro, he registrado que tienes {val_age} años.",
+                )
+
+            # B. Location / City: "Vivo en Medellín" / "Resido en Medellín"
+            m_loc = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"(?:vivo|resido)\s+en\s+(.+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_loc:
+                val_loc = m_loc.group(1).strip()
+                return ExplicitMemoryDirective(
+                    detected=True,
+                    subject="usuario",
+                    predicate="ciudad",
+                    object_val=val_loc,
+                    raw_statement=cleaned,
+                    confirmation_response=f"Entendido, he registrado que vives en {val_loc}.",
+                )
+
+            # C. Studies / Activity: "Estudio ingeniería de software" / "Estoy estudiando..."
+            m_study = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"(?:estudio|estoy\s+estudiando)\s+(.+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_study:
+                val_st = m_study.group(1).strip()
+                val_final = (
+                    f"estudiando {val_st}" if not val_st.startswith("estudiando") else val_st
+                )
+                return ExplicitMemoryDirective(
+                    detected=True,
+                    subject="usuario",
+                    predicate="actividad",
+                    object_val=val_final,
+                    raw_statement=cleaned,
+                    confirmation_response=f"Claro, recordaré que estás {val_final}.",
+                )
+
+            # D. Occupation: "Trabajo como desarrollador"
+            m_job = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"trabajo\s+como\s+(.+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_job:
+                val_job = m_job.group(1).strip()
+                return ExplicitMemoryDirective(
+                    detected=True,
+                    subject="usuario",
+                    predicate="ocupacion",
+                    object_val=val_job,
+                    raw_statement=cleaned,
+                    confirmation_response=f"Claro, recordaré que trabajas como {val_job}.",
+                )
+
+            # E. Employer: "Trabajo en Empresa X" / "Trabajo en Google"
+            m_emp = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"trabajo\s+en\s+(.+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_emp:
+                val_emp = m_emp.group(1).strip()
+                return ExplicitMemoryDirective(
+                    detected=True,
+                    subject="usuario",
+                    predicate="empleador",
+                    object_val=val_emp,
+                    raw_statement=cleaned,
+                    confirmation_response=f"Claro, recordaré que trabajas en {val_emp}.",
+                )
+
+            # F. Name: "Soy Andrés" / "Me llamo Andrés"
+            m_name = re.match(
+                r"^(?:(?:ahora|bueno|oye|mira|por\s+favor|hey|hola|aura)[,\s]*)*"
+                r"(?:soy|me\s+llamo)\s+([a-zA-ZáéíóúñÁÉÍÓÚÑ\s]+)$",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if m_name:
+                val_name = m_name.group(1).strip()
+                val_lower = val_name.lower()
+                if not val_lower.startswith("de ") and not val_lower.startswith("un "):
+                    return ExplicitMemoryDirective(
+                        detected=True,
+                        subject="usuario",
+                        predicate="nombre",
+                        object_val=val_name,
+                        raw_statement=cleaned,
+                        confirmation_response=f"Hola {val_name}, he registrado tu nombre.",
+                    )
+
         if not extracted_body:
             return ExplicitMemoryDirective(detected=False)
 

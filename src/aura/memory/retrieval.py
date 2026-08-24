@@ -272,9 +272,7 @@ class MemoryRetrievalEngine:
         # If a strong predicate/concept match exists, suppress generic subject-only noise
         max_fact_score = fact_scores[0][0] if fact_scores else 0.0
         if max_fact_score >= self.W_CONCEPT_ALIAS and not is_open:
-            fact_scores = [
-                item for item in fact_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)
-            ]
+            fact_scores = [item for item in fact_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)]
 
         matched_facts = [f for _, f in fact_scores[:limit]]
 
@@ -289,9 +287,7 @@ class MemoryRetrievalEngine:
 
         max_pref_score = pref_scores[0][0] if pref_scores else 0.0
         if max_pref_score >= self.W_CONCEPT_ALIAS and not is_open:
-            pref_scores = [
-                item for item in pref_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)
-            ]
+            pref_scores = [item for item in pref_scores if item[0] > (self.W_SUBJECT_MATCH + 0.05)]
 
         matched_prefs = [p for _, p in pref_scores[:limit]]
 

@@ -56,9 +56,9 @@ def test_cognition_module_integration_cycle(tmp_path):
     # Check working memory recorded turn
     wm = aura.container.resolve(WorkingMemory)
     turns = wm.get_recent_conversation(limit=5)
-    assert len(turns) == 2
-    assert turns[0]["role"] == "user"
-    assert turns[1]["role"] == "assistant"
+    assert len(turns) >= 2
+    assert turns[-2]["role"] == "user"
+    assert turns[-1]["role"] == "assistant"
 
     aura.shutdown(wait=True)
     assert aura.state == SystemState.STOPPED

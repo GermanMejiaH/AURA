@@ -8,7 +8,7 @@ from ..config import ConfigurationManager
 from ..container import DependencyContainer
 from ..events import EventBus
 from ..logging import get_logger
-from ..memory import AgentPlanStore
+from ..memory import AgentPlanStore, MemoryStore
 from ..modules.base import BaseModule
 from ..tools.registry import ToolRegistry
 from ..world import CognitiveWorldModel
@@ -52,7 +52,7 @@ class CognitionModule(BaseModule):
             else CognitiveStateMachine(event_bus=event_bus)
         )
         self.attention = AttentionManager()
-        self.working_memory = WorkingMemory()
+        self.working_memory = WorkingMemory(container=container)
         self.identity_manager = IdentityManager(config=config)
         self.session_manager = SessionManager(event_bus=event_bus)
         self.intent_detector = IntentDetector()
@@ -119,6 +119,24 @@ class CognitionModule(BaseModule):
             # Connect CWM if available in container
             if self._container.has(CognitiveWorldModel):
                 self.reasoning.cwm = self._container.resolve(CognitiveWorldModel)
+
+            # Hydrate WorkingMemory from SQLite store if available
+            from ..memory.store import SQLiteMemoryStore
+
+            target_store = None
+            if self._container.has(SQLiteMemoryStore):
+                target_store = self._container.resolve(SQLiteMemoryStore)
+            elif self._container.has(MemoryStore):
+                resolved = self._container.resolve(MemoryStore)  # type: ignore[type-abstract]
+                if isinstance(resolved, SQLiteMemoryStore):
+                    target_store = resolved
+
+            if target_store is not None:
+                hydrated_count = self.working_memory.hydrate_from_db(store=target_store)
+                if hydrated_count > 0:
+                    logger.info(
+                        f"Hydrated WorkingMemory with {hydrated_count} turns from persistent SQLite session"
+                    )
 
         logger.info(
             f"CognitionModule initialized [state={self.state_machine.state.value}, "
@@ -436,6 +454,7 @@ class CognitionModule(BaseModule):
             system_instruction=system_identity,
             working_memory=self.working_memory,
             conversation_context=conv_ctx,
+            intent=detected_intent,
         )
         t_context_build = time.perf_counter() - t0
 
