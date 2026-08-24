@@ -21,7 +21,7 @@ class FasterWhisperSTTProvider(STTProvider):
         device: str | None = None,
         compute_type: str | None = None,
         default_transcript: str = "",
-        initial_prompt: str = "AURA es una asistente virtual en español.",
+        initial_prompt: str = "",
         vad_filter: bool = False,
         preferences_memory: UserPreferencesMemory | None = None,
     ) -> None:

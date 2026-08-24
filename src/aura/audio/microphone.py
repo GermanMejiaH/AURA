@@ -217,7 +217,7 @@ class MicrophoneRecorder:
 
                 if rms >= energy_threshold:
                     consecutive_speech_chunks += 1
-                    if consecutive_speech_chunks >= 2:
+                    if consecutive_speech_chunks >= 5:  # 500ms sustained speech threshold
                         speech_started = True
                     silent_chunks = 0
                 else:

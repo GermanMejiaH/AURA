@@ -45,6 +45,8 @@ class AutonomousVoiceAgent:
         "3. SI ES RUIDO O HABLA AJENA: usa action: 'IGNORE' y response: ''.\n"
     )
 
+    POST_TTS_COOLDOWN_SEC: float = 2.0
+
     def __init__(
         self,
         llm_provider: LLMProvider,
@@ -75,6 +77,9 @@ class AutonomousVoiceAgent:
         self._is_speaking = False
         self._speech_lock = threading.Lock()
         self._thread: threading.Thread | None = None
+
+        self.last_tts_output: str = ""
+        self.last_tts_end: float = 0.0
 
     def start(self) -> None:
         """Starts the continuous autonomous voice monitoring loop."""
@@ -157,6 +162,41 @@ class AutonomousVoiceAgent:
 
                 if not user_text:
                     continue
+
+                import difflib
+
+                # TASK 4: Minimum Transcript Validation (< 10 chars unless greeting or exit)
+                is_exit_cmd = ControlIntentDetector.is_exit(user_text)
+                is_greeting_cmd = ControlIntentDetector.is_greeting(user_text)
+                if len(user_text.strip()) < 10 and not (is_exit_cmd or is_greeting_cmd):
+                    print(f"  🛑 [VOICE GUARD] Transcript rejected (too short: '{user_text}')")
+                    continue
+
+                # TASK 5: Self-Transcript Detector (SequenceMatcher ratio >= 0.70 or substring)
+                if self.last_tts_output:
+                    ratio = difflib.SequenceMatcher(
+                        None, user_text.lower(), self.last_tts_output
+                    ).ratio()
+                    if ratio >= 0.70 or user_text.lower() in self.last_tts_output:
+                        print(
+                            "  🛑 [VOICE GUARD] Self-transcription detected "
+                            f"(similarity={ratio * 100:.1f}%). Discarded."
+                        )
+                        continue
+
+                # TASK 6: Echo Window Protection (< 2.0s post-TTS)
+                time_since_tts = time.perf_counter() - self.last_tts_end
+                if time_since_tts < self.POST_TTS_COOLDOWN_SEC:
+                    if self.last_tts_output:
+                        ratio = difflib.SequenceMatcher(
+                            None, user_text.lower(), self.last_tts_output
+                        ).ratio()
+                        if ratio >= 0.50 or user_text.lower() in self.last_tts_output:
+                            print(
+                                "  🛑 [VOICE GUARD] Echo window capture discarded "
+                                f"({time_since_tts:.2f}s post-TTS)."
+                            )
+                            continue
 
                 telemetry.increment("speech_events_detected")
                 telemetry.record_latency("time_stt_ms", t_stt_elapsed)
@@ -509,9 +549,10 @@ class AutonomousVoiceAgent:
         with self._speech_lock:
             self._is_speaking = True
         try:
+            self.last_tts_output = text.strip().lower()
             self.tts.speak(text)
         finally:
-            # 300ms post-synthesis guard window for acoustic room echo decay
-            time.sleep(0.3)
+            time.sleep(self.POST_TTS_COOLDOWN_SEC)
+            self.last_tts_end = time.perf_counter()
             with self._speech_lock:
                 self._is_speaking = False

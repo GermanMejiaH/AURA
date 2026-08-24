@@ -1,0 +1,8 @@
+{
+  "test1_no_speech": true,
+  "test2_tts_cooldown": true,
+  "test3_echo_discarded": true,
+  "test4_human_speech": true,
+  "test5_fragment_rejected": true,
+  "test6_initial_prompt_empty": true
+}

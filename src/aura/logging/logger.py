@@ -120,8 +120,12 @@ class AuraLogger:
 
         if self.enable_file:
             try:
+                from logging.handlers import RotatingFileHandler
+
                 Path(self.file_path).parent.mkdir(parents=True, exist_ok=True)
-                fh = logging.FileHandler(self.file_path, encoding="utf-8")
+                fh = RotatingFileHandler(
+                    self.file_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+                )
                 fh.setLevel(self.level)
                 fh.setFormatter(formatter)
                 root.addHandler(fh)
