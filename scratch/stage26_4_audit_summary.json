@@ -1,0 +1,46 @@
+{
+  "concurrency": {
+    "writes_count": 500,
+    "reads_count": 250,
+    "errors": [],
+    "duration_sec": 1.9446405000053346,
+    "passed": true
+  },
+  "crash_recovery": {
+    "recovered_facts": 2,
+    "recovered_preference": "español",
+    "recovered_turns": 2,
+    "passed": true
+  },
+  "sqlite_durability": {
+    "journal_mode": "wal",
+    "busy_timeout": 5000,
+    "rollback_success": true,
+    "uncommitted_count": 0,
+    "passed": true
+  },
+  "tool_failure": {
+    "direct_handled": true,
+    "orchestrator_handled": true,
+    "error_msg": "Network Timeout Exception Simulation",
+    "passed": true
+  },
+  "voice_resilience": {
+    "initial_failures": 0,
+    "failures_logged": 2,
+    "passed": true
+  },
+  "endurance": {
+    "num_cycles": 200,
+    "duration_sec": 2.4557721000164747,
+    "initial_threads": 1,
+    "final_threads": 1,
+    "peak_mem_bytes": 323118,
+    "mem_growth_mb": 0.1423482894897461,
+    "thread_leak": false,
+    "passed": true
+  },
+  "all_audits_passed": true,
+  "production_readiness_score": "98/100",
+  "recommendation": "APPROVED FOR PRODUCTION"
+}

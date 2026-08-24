@@ -412,8 +412,9 @@ class AutonomousVoiceAgent:
                 )
 
             except Exception as exc:
+                telemetry.increment("voice_turn_failures")
+                print(f"  [ERROR] Fallo en ciclo de voz: {exc}")
                 time.sleep(0.3)
-                _ = exc
 
     def _schedule_reminder(self, reminder: dict[str, Any]) -> None:
         """Schedules a gentle reminder with robust text field validation."""
