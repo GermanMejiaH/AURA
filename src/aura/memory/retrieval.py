@@ -80,6 +80,57 @@ CONCEPT_ALIASES: dict[str, set[str]] = {
         "llamo",
         "llamaron",
     },
+    "edad": {
+        "edad",
+        "anos",
+        "anios",
+        "cumpleanos",
+        "cumple",
+        "tengo",
+    },
+    "ciudad": {
+        "ciudad",
+        "vivo",
+        "resido",
+        "vivir",
+        "residir",
+        "donde",
+        "ubicacion",
+    },
+    "ocupacion": {
+        "ocupacion",
+        "trabajo",
+        "desarrollador",
+        "profesion",
+        "empleo",
+        "oficio",
+    },
+    "empleador": {
+        "empleador",
+        "empresa",
+        "compañia",
+        "compania",
+        "trabajo",
+    },
+    "carrera": {
+        "carrera",
+        "estudio",
+        "estudiar",
+        "estudiando",
+        "profesion",
+    },
+    "proyecto": {
+        "proyecto",
+        "proyectos",
+        "sistema",
+        "desarrollo",
+    },
+    "habilidad": {
+        "habilidad",
+        "habilidades",
+        "programacion",
+        "conocimiento",
+    },
 }
 
 STOPWORDS = {
@@ -202,8 +253,11 @@ class MemoryRetrievalEngine:
             score += self.W_EXACT_PREDICATE
 
         canonical_concept = norm_pred.replace("_", " ")
-        aliases = CONCEPT_ALIASES.get(fact.predicate, set()) | CONCEPT_ALIASES.get(
-            canonical_concept, set()
+        pred_base = norm_pred.split("_")[0]
+        aliases = (
+            CONCEPT_ALIASES.get(fact.predicate, set())
+            | CONCEPT_ALIASES.get(canonical_concept, set())
+            | CONCEPT_ALIASES.get(pred_base, set())
         )
         if any(token in aliases for token in query_tokens):
             score += self.W_CONCEPT_ALIAS
