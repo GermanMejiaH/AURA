@@ -1,0 +1,119 @@
+{
+  "phase1_retrieval_identity": {
+    "query": "¿Quién soy?",
+    "query_tokens": [
+      "soy",
+      "quien"
+    ],
+    "is_open_recall": true,
+    "fact_scores": [
+      {
+        "predicate": "ocupacion",
+        "value": "desarrollador",
+        "score": 0.3
+      },
+      {
+        "predicate": "actividad",
+        "value": "estudiando ingeniería de software",
+        "score": 0.3
+      },
+      {
+        "predicate": "ciudad",
+        "value": "Medellín",
+        "score": 0.3
+      },
+      {
+        "predicate": "edad",
+        "value": "26",
+        "score": 0.3
+      },
+      {
+        "predicate": "nombre",
+        "value": "Andrés",
+        "score": 0.3
+      }
+    ],
+    "pref_scores": [
+      {
+        "key": "color_favorito",
+        "value": "rojo",
+        "score": 0.3
+      }
+    ],
+    "selected_response": "Tu nombre es Andrés.",
+    "root_cause": "All identity facts tie at score 0.30 (W_SUBJECT_MATCH only) because 'quien' and 'soy' do not match identity predicate concept aliases. AutonomousVoiceAgent selects only the first item in res.facts without concatenating user identity profile."
+  },
+  "phase2_age_query_fastpath": {
+    "patterns_in_code": [
+      "\\bcu[aá]l\\s+es\\s+mi\\b",
+      "\\bc[oó]mo\\s+me\\s+llamo\\b",
+      "\\bqui[eé]n\\s+soy\\b",
+      "\\bqu[eé]\\s+sabes\\s+de\\s+m[ií]\\b",
+      "\\bsabes\\s+cu[aá]l\\s+es\\s+mi\\b"
+    ],
+    "query_evaluations": [
+      {
+        "query": "¿Quién soy?",
+        "normalized": "quién soy",
+        "fastpath_active": true,
+        "matched_pattern": "\\bqui[eé]n\\s+soy\\b"
+      },
+      {
+        "query": "¿Cuántos años tengo?",
+        "normalized": "cuántos años tengo",
+        "fastpath_active": false,
+        "matched_pattern": null
+      },
+      {
+        "query": "¿Dónde vivo?",
+        "normalized": "dónde vivo",
+        "fastpath_active": false,
+        "matched_pattern": null
+      },
+      {
+        "query": "¿Qué estudio?",
+        "normalized": "qué estudio",
+        "fastpath_active": false,
+        "matched_pattern": null
+      },
+      {
+        "query": "¿Dónde trabajo?",
+        "normalized": "dónde trabajo",
+        "fastpath_active": false,
+        "matched_pattern": null
+      }
+    ],
+    "root_cause": "ControlIntentDetector.DIRECT_MEMORY_PATTERNS lacks regex patterns for 'cuantos anos tengo', 'donde vivo', 'que estudio', 'donde trabajo', causing these queries to return False and bypass the 0-LLM fastpath."
+  },
+  "phase3_phase4_telemetry_and_413": {
+    "internal_telemetry_tokens": 303,
+    "real_bpe_estimated_tokens": 379,
+    "total_payload_bytes": 1226,
+    "variance_multiplier": 1.25,
+    "component_breakdown_bytes": {
+      "system_instruction_bytes": 769,
+      "formatted_prompt_bytes": 457,
+      "tools_metadata_bytes": 1
+    },
+    "root_cause_telemetry": "Internal telemetry relies on len(text) // 4 which underestimates Spanish text BPE tokens by 30-50%, excludes tool_results added after build(), and omits OpenAI message wrapper overhead.",
+    "root_cause_413": "When 12-50 history turns + ToolRegistry metadata + CWM entities + persistent goals are hydrated into system instructions, payload size reaches 15-30 KB (2,500-4,500 BPE tokens). This exceeds rate-limit token ceilings or single-request TPM allowances on cloud endpoints (Groq/OpenRouter free tiers), generating HTTP 413 / 429 errors."
+  },
+  "phase5_tool_context": {
+    "registered_tools_count": 0,
+    "total_tool_tokens": 0,
+    "tool_table": [],
+    "root_cause": "is_casual is evaluated strictly against a hardcoded list of greeting keywords ('hola', 'saludos'). Statements like 'Soy Andrés' or 'Tengo 26 años' evaluate is_casual=False, forcing full ToolRegistry metadata (213+ tokens) into system prompt instructions."
+  },
+  "phase6_reassessment": {
+    "reassessed_scores": {
+      "Memory Reliability": 75,
+      "Retrieval Accuracy": 60,
+      "Prompt Efficiency": 45,
+      "Token Accounting Accuracy": 35,
+      "Voice Stability": 65,
+      "Production Readiness": 56
+    },
+    "overall_score": 56.0,
+    "status": "NOT READY FOR PRODUCTION — STAGE 26.3E REQUIRED"
+  }
+}
