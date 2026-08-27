@@ -105,9 +105,41 @@ class OpenAILLMProvider(LLMProvider):
             client = self._get_client()
 
             system_content = system_instruction or self.SYSTEM_IDENTITY
+            from .context import estimate_tokens
+
+            # Hard Ceiling Protection (2,000 tokens ceiling)
+            max_provider_tokens = 2000
+            curr_prompt = prompt
+            combined_text = system_content + "\n" + curr_prompt
+            est_tokens = estimate_tokens(combined_text)
+
+            # Truncate prompt text if combined tokens exceed max_provider_tokens ceiling
+            if est_tokens > max_provider_tokens:
+                # Target max chars based on 2.0 chars/token ratio (~4,000 chars total)
+                target_prompt_chars = max(200, (max_provider_tokens * 2) - len(system_content))
+                curr_prompt = curr_prompt[-target_prompt_chars:]
+                combined_text = system_content + "\n" + curr_prompt
+                est_tokens = estimate_tokens(combined_text)
+                logger.warning(
+                    f"Prompt payload truncated to fit max_provider_tokens ({max_provider_tokens}). "
+                    f"New prompt_chars={len(curr_prompt)} est_tokens={est_tokens}"
+                )
+
+            sys_chars = len(system_content)
+            sys_toks = estimate_tokens(system_content)
+            prompt_chars = len(curr_prompt)
+            prompt_toks = estimate_tokens(curr_prompt)
+            combined_chars = len(combined_text)
+
+            logger.info(
+                f"[PAYLOAD SENT] [PAYLOAD BREAKDOWN] system_chars={sys_chars} ({sys_toks}t) "
+                f"prompt_chars={prompt_chars} ({prompt_toks}t) "
+                f"combined_chars={combined_chars} total_est_tokens={est_tokens}"
+            )
+
             messages = [
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": curr_prompt},
             ]
 
             response = client.chat.completions.create(

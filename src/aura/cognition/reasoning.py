@@ -66,13 +66,54 @@ class ReasoningEngine:
                 system_instruction=system_prompt,
             )
 
+            final_text = llm_res.content
+            from .tool_orchestrator import ToolOrchestrator
+
+            # Post-LLM Tool Call Parser & Execution Loop
+            parsed_calls = ToolOrchestrator.parse_tool_calls(llm_res.content)
+            if parsed_calls:
+                from ..logging import get_logger
+                from ..tools.registry import ToolRegistry
+
+                r_logger = get_logger("ReasoningEngine")
+                t_names = [call[0] for call in parsed_calls]
+                r_logger.info(f"[POST-LLM TOOL PARSED] count={len(parsed_calls)} tools={t_names}")
+
+                # Resolve ToolRegistry if container is connected
+                registry = None
+                if hasattr(self.working_memory, "container") and self.working_memory.container:
+                    if self.working_memory.container.has(ToolRegistry):
+                        registry = self.working_memory.container.resolve(ToolRegistry)
+
+                orchestrator = ToolOrchestrator()
+                exec_results = orchestrator.execute_parsed_tools(
+                    candidate_calls=parsed_calls,
+                    registry=registry,
+                    input_text=input_text,
+                )
+
+                if exec_results:
+                    cognitive_context.tool_results.extend(exec_results)
+                    r_logger.info("[POST-LLM SECOND PASS STARTED]")
+                    # Second Pass: Synthesize tool execution output into final natural response
+                    sec_sys_prompt = cognitive_context.to_system_prompt()
+                    sec_fmt_prompt = cognitive_context.to_formatted_prompt()
+                    sec_llm_res = self.llm_provider.generate_response(
+                        prompt=sec_fmt_prompt,
+                        system_instruction=sec_sys_prompt,
+                    )
+                    final_text = sec_llm_res.content
+
+            # Strip all raw tool markup from final text output (prevent raw XML reaching TTS)
+            clean_summary = ToolOrchestrator.strip_tool_markup(final_text)
+
             return ReasoningResult(
-                summary=llm_res.content,
+                summary=clean_summary if clean_summary else final_text,
                 intent="user_interaction",
                 confidence=1.0,
                 relevant_entities=relevant_entities,
                 suggested_actions=[],
-                raw_reasoning={"llm_response": llm_res.content, "tokens_used": llm_res.tokens_used},
+                raw_reasoning={"llm_response": final_text, "tokens_used": llm_res.tokens_used},
             )
 
         context_dict: dict[str, Any] = {

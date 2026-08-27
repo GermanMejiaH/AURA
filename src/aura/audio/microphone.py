@@ -149,12 +149,23 @@ class MicrophoneRecorder:
     def record_until_silence(
         self,
         max_duration_sec: float = 10.0,
-        silence_sec: float = 1.2,
+        silence_sec: float = 0.8,
         energy_threshold: float = 120.0,
+        noise_multiplier: float = 1.3,
+        max_threshold_ceiling: float = 140.0,
     ) -> bytes:
         """Records microphone input until speech ends (detected silence) or max duration reached."""
+        import time
+
         import numpy as np
         import sounddevice as sd
+
+        from ..logging import get_logger
+        from ..telemetry import TelemetryManager
+
+        logger = get_logger("MicrophoneRecorder")
+        telemetry = TelemetryManager.get_instance()
+        t_vad_start = time.perf_counter()
 
         dev_id = self.resolve_device_id(self.device)
         actual_rate = self.sample_rate
@@ -163,13 +174,24 @@ class MicrophoneRecorder:
 
         native_rate = 48000
         native_channels = self.channels
+        dev_name = "Default"
         if dev_id is not None:
             try:
                 info = sd.query_devices(dev_id, "input")
+                dev_name = str(info.get("name", "Unknown"))
                 native_rate = int(info.get("default_samplerate", 48000))
                 native_channels = int(info.get("max_input_channels", self.channels))
             except Exception:
                 pass
+
+        logger.info(
+            f"[MIC INPUT DEVICE] resolved_id={dev_id} name='{dev_name}' "
+            f"sample_rate={actual_rate} channels={actual_channels}"
+        )
+        logger.info(
+            f"[VAD START] max_duration={max_duration_sec}s silence_threshold={silence_sec}s "
+            f"noise_mult={noise_multiplier} ceiling={max_threshold_ceiling}"
+        )
 
         # Try to open InputStream at requested rate or fallback to native rate
         stream = None
@@ -197,10 +219,14 @@ class MicrophoneRecorder:
         rms_values: list[float] = []
 
         speech_started = False
+        speech_start_index = 0
         consecutive_speech_chunks = 0
         silent_chunks = 0
-        max_silent_chunks = int(silence_sec / chunk_duration)
+        max_silent_chunks = max(1, int(silence_sec / chunk_duration))
         total_chunks = int(max_duration_sec / chunk_duration)
+
+        ambient_rms = energy_threshold / noise_multiplier
+        dynamic_threshold = energy_threshold
 
         try:
             for _ in range(total_chunks):
@@ -215,10 +241,29 @@ class MicrophoneRecorder:
                 )
                 rms_values.append(rms)
 
-                if rms >= energy_threshold:
+                # Dynamically calculate threshold based on rolling ambient noise RMS
+                if not speech_started:
+                    quiet_noise = [r for r in rms_values[-5:] if r < energy_threshold * 0.8]
+                    if quiet_noise:
+                        ambient_rms = sum(quiet_noise) / len(quiet_noise)
+                        raw_thresh = max(energy_threshold, ambient_rms * noise_multiplier)
+                        if raw_thresh > max_threshold_ceiling:
+                            telemetry.increment("vad_ceiling_hits")
+                        dynamic_threshold = min(max_threshold_ceiling, raw_thresh)
+                        telemetry.increment("vad_ambient_rms_last", int(ambient_rms))
+                        telemetry.increment("vad_dynamic_threshold_last", int(dynamic_threshold))
+
+                if rms >= dynamic_threshold:
                     consecutive_speech_chunks += 1
-                    if consecutive_speech_chunks >= 5:  # 500ms sustained speech threshold
-                        speech_started = True
+                    if consecutive_speech_chunks >= 2:  # 200ms sustained speech threshold
+                        if not speech_started:
+                            speech_start_index = max(0, len(frames) - consecutive_speech_chunks - 2)
+                            speech_started = True
+                            telemetry.increment("vad_speech_triggers")
+                            logger.info(
+                                f"[VAD SPEECH DETECTED] ambient={ambient_rms:.1f} "
+                                f"threshold={dynamic_threshold:.1f} ceiling={max_threshold_ceiling:.1f}"
+                            )
                     silent_chunks = 0
                 else:
                     consecutive_speech_chunks = 0
@@ -233,25 +278,34 @@ class MicrophoneRecorder:
                 stream.stop()
                 stream.close()
 
+        t_vad_end = time.perf_counter()
+        vad_duration_ms = (t_vad_end - t_vad_start) * 1000
+
         min_rms = min(rms_values) if rms_values else 0.0
         max_rms = max(rms_values) if rms_values else 0.0
         avg_rms = sum(rms_values) / len(rms_values) if rms_values else 0.0
 
         if not speech_started or not frames:
-            print(
-                "  [AUTO VAD] Capture returned EMPTY AUDIO (No speech detected above threshold) | "
-                f"RMS stats: min={min_rms:.1f}, max={max_rms:.1f}, avg={avg_rms:.1f} | "
-                f"threshold={energy_threshold}"
+            logger.info(
+                f"[VAD END] Capture returned EMPTY AUDIO | duration={vad_duration_ms:.2f}ms | "
+                f"RMS stats: min={min_rms:.1f}, max={max_rms:.1f}, avg={avg_rms:.1f}"
             )
             return b""
 
-        print(
-            f"  [AUTO VAD] Speech detected! Chunks={len(frames)} | "
-            f"RMS stats: min={min_rms:.1f}, max={max_rms:.1f}, avg={avg_rms:.1f} | "
-            f"threshold={energy_threshold}"
-        )
+        # Pre-speech silence trimming: Keep 200ms buffer before speech start
+        speech_frames = frames[speech_start_index:]
+        capture_duration_sec = len(speech_frames) * chunk_duration
+        speech_duration_sec = max(0.0, capture_duration_sec - (silent_chunks * chunk_duration))
+        silence_duration_sec = silent_chunks * chunk_duration
 
-        full_audio = np.concatenate(frames, axis=0)
+        logger.info(
+            f"[VAD END] Speech captured! total_chunks={len(speech_frames)} | "
+            f"capture_sec={capture_duration_sec:.2f}s speech_sec={speech_duration_sec:.2f}s "
+            f"silence_sec={silence_duration_sec:.2f}s | RMS max={max_rms:.1f} avg={avg_rms:.1f}"
+        )
+        logger.info(f"[VAD DURATION] {vad_duration_ms:.2f}ms")
+
+        full_audio = np.concatenate(speech_frames, axis=0)
         pcm_bytes = full_audio.tobytes()
 
         if actual_rate != 16000 or actual_channels != 1:

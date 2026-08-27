@@ -205,6 +205,26 @@ class GeminiLLMProvider(LLMProvider):
             "Genera la interpretación en JSON estricto:"
         )
 
+        from ..logging import get_logger
+        from .context import estimate_tokens
+
+        g_logger = get_logger("GeminiLLMProvider")
+        sys_t = estimate_tokens(sys_prompt)
+        usr_t = estimate_tokens(user_input)
+        tls_t = estimate_tokens(tools_str)
+        his_t = estimate_tokens(hist_str)
+        tot_t = sys_t + usr_t + tls_t + his_t
+
+        def _pct(t: int) -> float:
+            return (t / tot_t * 100.0) if tot_t > 0 else 0.0
+
+        tot_chars = len(sys_prompt) + len(user_input) + len(tools_str) + len(hist_str)
+        g_logger.info(
+            f"[PAYLOAD BREAKDOWN] total_chars={tot_chars} total_est_tokens={tot_t} | "
+            f"system={sys_t}t ({_pct(sys_t):.1f}%) | user={usr_t}t ({_pct(usr_t):.1f}%) | "
+            f"tools={tls_t}t ({_pct(tls_t):.1f}%) | history={his_t}t ({_pct(his_t):.1f}%)"
+        )
+
         try:
             resp = self.generate_response(prompt=full_prompt, system_instruction=sys_prompt)
             clean_text = resp.content.strip()

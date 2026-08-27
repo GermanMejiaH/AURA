@@ -426,7 +426,8 @@ def _handle_converse(aura: AURA, arg: str) -> None:
         except ValueError:
             pass
 
-    stt = FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
+    stt = FasterWhisperSTTProvider(model_size_or_path="small", device="cpu")
+    stt.warmup()
     tts = EdgeTTSProvider(voice="es-aura")
 
     aura.config.load_from_env()
@@ -548,7 +549,8 @@ def _handle_auto(aura: AURA) -> None:
     else:
         llm = OpenAILLMProvider()
 
-    stt = FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
+    stt = FasterWhisperSTTProvider(model_size_or_path="small", device="cpu")
+    stt.warmup()
     tts = EdgeTTSProvider(voice="es-aura")
 
     cog_mod = aura.module_manager.get("cognition") if aura.module_manager else None

@@ -48,7 +48,7 @@ def test_auto_mic_reenabled_after_tts() -> None:
 
     with patch("time.sleep") as mock_sleep:
         agent._speak("Prueba de audio")
-        mock_sleep.assert_called_once_with(0.3)
+        mock_sleep.assert_called_once_with(2.0)
 
     assert agent._is_speaking is False
     mock_tts.speak.assert_called_once_with("Prueba de audio")

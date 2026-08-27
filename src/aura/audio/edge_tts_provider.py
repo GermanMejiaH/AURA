@@ -52,17 +52,28 @@ class EdgeTTSProvider(TTSProvider):
 
     def synthesize(self, text: str, voice: str = "default") -> TTSResult:
         """Converts text to MP3 audio bytes using Microsoft Edge TTS."""
+        import time
+
+        from ..logging import get_logger
+
+        logger = get_logger("EdgeTTSProvider")
+
         if not text.strip():
             return TTSResult(audio_bytes=b"", text=text, duration_seconds=0.0)
 
         voice_name = self.VOICES.get(voice, self.voice) if voice != "default" else self.voice
 
         try:
-            audio_bytes = asyncio.run(self._synth_async(text, voice_name))
+            t0 = time.perf_counter()
+            audio_bytes, load_ms, synth_ms, save_ms = asyncio.run(
+                self._synth_async(text, voice_name)
+            )
+            total_synth_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                f"[TTS PROFILING] load_model_ms={load_ms:.2f} synthesize_ms={synth_ms:.2f} "
+                f"save_audio_ms={save_ms:.2f} total_synth_ms={total_synth_ms:.2f}"
+            )
         except Exception as exc:
-            from ..logging import get_logger
-
-            logger = get_logger("EdgeTTSProvider")
             logger.warning(f"EdgeTTS synthesis failed ({exc}); returning empty TTSResult.")
             return TTSResult(audio_bytes=b"", text=text, duration_seconds=0.0)
 
@@ -70,18 +81,33 @@ class EdgeTTSProvider(TTSProvider):
             audio_bytes=audio_bytes,
             text=text,
             duration_seconds=max(0.1, len(text) * 0.065),
+            load_model_ms=load_ms,
+            synthesize_ms=synth_ms,
+            save_audio_ms=save_ms,
         )
 
-    async def _synth_async(self, text: str, voice_name: str) -> bytes:
-        """Async helper to generate MP3 audio from Edge TTS."""
+    async def _synth_async(self, text: str, voice_name: str) -> tuple[bytes, float, float, float]:
+        """Async helper to generate MP3 audio with micro-timing."""
+        import time
+
         import edge_tts
 
-        buf = io.BytesIO()
+        t_load_0 = time.perf_counter()
         communicate = edge_tts.Communicate(text, voice_name, rate=self.rate, pitch=self.pitch)
+        load_ms = (time.perf_counter() - t_load_0) * 1000
+
+        t_synth_0 = time.perf_counter()
+        buf = io.BytesIO()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
-        return buf.getvalue()
+        synth_ms = (time.perf_counter() - t_synth_0) * 1000
+
+        t_save_0 = time.perf_counter()
+        data = buf.getvalue()
+        save_ms = (time.perf_counter() - t_save_0) * 1000
+
+        return data, load_ms, synth_ms, save_ms
 
     def speak(self, text: str) -> None:
         """Synthesizes and plays audio directly through the system speakers."""

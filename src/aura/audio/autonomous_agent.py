@@ -61,7 +61,9 @@ class AutonomousVoiceAgent:
         import os
 
         self.llm = llm_provider
-        self.stt = stt_provider or FasterWhisperSTTProvider(model_size_or_path="base", device="cpu")
+        self.stt = stt_provider or FasterWhisperSTTProvider(
+            model_size_or_path="small", device="cpu"
+        )
         self.tts = tts_provider or EdgeTTSProvider(voice="es-aura")
         self.event_bus = event_bus
         self.scheduler = scheduler
@@ -80,6 +82,81 @@ class AutonomousVoiceAgent:
 
         self.last_tts_output: str = ""
         self.last_tts_end: float = 0.0
+
+        self._awaiting_exit_confirmation: bool = False
+        self._exit_confirmation_time: float = 0.0
+
+    @staticmethod
+    def is_low_quality_transcript(text: str) -> bool:
+        """Evaluates whether transcript is low-quality nonsense or repetitive."""
+        clean = text.lower().strip()
+        words = clean.split()
+        if not words:
+            return True
+
+        # Check for immediate consecutive repeated words (e.g. "y si no no", "no no no")
+        for i in range(len(words) - 1):
+            if words[i] == words[i + 1] and len(words[i]) <= 3:
+                return True
+
+        # Blacklist of common low-confidence Spanish n-gram hallucinations
+        nonsense_patterns = (
+            "y si no no",
+            "de que pueda ser bajo",
+            "ayer es un chico",
+            "y si no",
+            "no no",
+            "eh eh",
+            "mmm mmm",
+            "subtítulos",
+            "subtitulos",
+            "transcripción",
+            "transcripcion",
+            "suscríbete",
+            "suscribete",
+            "gracias por ver",
+            "comunidad de youtube",
+        )
+        if any(pat in clean for pat in nonsense_patterns):
+            return True
+
+        # Check lexical diversity (unique words / total words) for longer transcripts
+        if len(words) >= 4:
+            unique_ratio = len(set(words)) / len(words)
+            if unique_ratio < 0.5:
+                return True
+
+        # Stop words filter for meaningful tokens
+        stop_words = {
+            "y",
+            "o",
+            "de",
+            "del",
+            "la",
+            "el",
+            "un",
+            "una",
+            "los",
+            "las",
+            "en",
+            "por",
+            "para",
+            "con",
+            "sin",
+            "no",
+            "si",
+            "sí",
+            "que",
+            "es",
+            "ser",
+            "se",
+        }
+        meaningful_tokens = [w for w in words if w not in stop_words and len(w) >= 3]
+
+        if len(meaningful_tokens) < 1:
+            return True
+
+        return False
 
     def start(self) -> None:
         """Starts the continuous autonomous voice monitoring loop."""
@@ -107,6 +184,31 @@ class AutonomousVoiceAgent:
                 self.tts.stop()
                 print("\n  🤐 [AURA detectó tu voz y guardó silencio]")
 
+    def _log_pipeline_metrics(
+        self,
+        vad_ms: float,
+        stt_ms: float,
+        intent_ms: float,
+        retrieval_ms: float,
+        llm_ms: float,
+        tts_ms: float,
+        playback_ms: float,
+        queue_ms: float,
+        total_ms: float,
+    ) -> None:
+        print(
+            f"\n  📊 [PIPELINE]\n"
+            f"  vad_ms={vad_ms:.1f}\n"
+            f"  stt_ms={stt_ms:.1f}\n"
+            f"  intent_ms={intent_ms:.1f}\n"
+            f"  retrieval_ms={retrieval_ms:.1f}\n"
+            f"  llm_ms={llm_ms:.1f}\n"
+            f"  tts_ms={tts_ms:.1f}\n"
+            f"  playback_ms={playback_ms:.1f}\n"
+            f"  queue_ms={queue_ms:.1f}\n"
+            f"  total_ms={total_ms:.1f}"
+        )
+
     def _loop(self) -> None:
         """Continuous background loop: Listen VAD -> Transcribe -> Decide -> Act/Speak/Ignore."""
         self._running = True
@@ -122,57 +224,68 @@ class AutonomousVoiceAgent:
         self._speak(greetings)
 
         while self._running:
+            t_vad_ms = 0.0
+            t_stt_ms = 0.0
+            t_intent_ms = 0.0
+            t_retrieval_ms = 0.0
+            t_llm_ms = 0.0
+            t_tts_ms = 0.0
+            t_playback_ms = 0.0
+            t_queue_ms = 0.0
+            t_total_ms = 0.0
+            t_turn_start = 0.0
+
+            # Audio Mutex Check: If AURA is currently speaking, do not capture microphone
+            with self._speech_lock:
+                currently_speaking = self._is_speaking
+
+            if currently_speaking:
+                time.sleep(0.1)
+                continue
+
+            print("  [AUTO] Esperando voz...")
+            t_vad_0 = time.perf_counter()
+            audio_bytes = self.recorder.record_until_silence(
+                max_duration_sec=15.0,
+                silence_sec=0.8,
+                energy_threshold=120.0,
+            )
+            t_vad_ms = (time.perf_counter() - t_vad_0) * 1000
+
+            with self._speech_lock:
+                currently_speaking = self._is_speaking
+
+            if currently_speaking or not audio_bytes or len(audio_bytes) < 4000:
+                time.sleep(0.05)
+                continue
+
+            from ..telemetry import TelemetryManager
+
+            telemetry = TelemetryManager.get_instance()
+            t_turn_start = time.perf_counter()
+
+            print(f"  [AUTO] Captura retorno {len(audio_bytes)} bytes de audio")
+
+            t_stt_0 = time.perf_counter()
+            stt_res = self.stt.transcribe(audio_bytes, language="es")
+            t_stt_ms = (time.perf_counter() - t_stt_0) * 1000
+            user_text = stt_res.text.strip()
+
+            if not user_text:
+                continue
+
             try:
-                # Audio Mutex Check: If AURA is currently speaking, do not capture microphone
-                with self._speech_lock:
-                    currently_speaking = self._is_speaking
-
-                if currently_speaking:
-                    time.sleep(0.1)
-                    continue
-
-                print("  [AUTO] Esperando voz...")
-                # 1. Listen until user stops speaking
-                audio_bytes = self.recorder.record_until_silence(
-                    max_duration_sec=15.0,
-                    silence_sec=1.2,
-                    energy_threshold=120.0,
-                )
-
-                # Audio Mutex Guard: Discard audio captured if TTS playback started during capture
-                with self._speech_lock:
-                    currently_speaking = self._is_speaking
-
-                if currently_speaking or not audio_bytes or len(audio_bytes) < 4000:
-                    time.sleep(0.05)
-                    continue
-
-                from ..telemetry import TelemetryManager
-
-                telemetry = TelemetryManager.get_instance()
-                t_turn_start = time.perf_counter()
-
-                print(f"  [AUTO] Captura retorno {len(audio_bytes)} bytes de audio")
-
-                # 2. Transcribe speech
-                t_stt_0 = time.perf_counter()
-                stt_res = self.stt.transcribe(audio_bytes, language="es")
-                t_stt_elapsed = (time.perf_counter() - t_stt_0) * 1000
-                user_text = stt_res.text.strip()
-
-                if not user_text:
-                    continue
-
                 import difflib
 
-                # TASK 4: Minimum Transcript Validation (< 10 chars unless greeting or exit)
                 is_exit_cmd = ControlIntentDetector.is_exit(user_text)
                 is_greeting_cmd = ControlIntentDetector.is_greeting(user_text)
-                if len(user_text.strip()) < 10 and not (is_exit_cmd or is_greeting_cmd):
+
+                if len(user_text.strip()) < 10 and not (
+                    is_exit_cmd or is_greeting_cmd or self._awaiting_exit_confirmation
+                ):
                     print(f"  🛑 [VOICE GUARD] Transcript rejected (too short: '{user_text}')")
                     continue
 
-                # TASK 5: Self-Transcript Detector (SequenceMatcher ratio >= 0.70 or substring)
                 if self.last_tts_output:
                     ratio = difflib.SequenceMatcher(
                         None, user_text.lower(), self.last_tts_output
@@ -184,7 +297,6 @@ class AutonomousVoiceAgent:
                         )
                         continue
 
-                # TASK 6: Echo Window Protection (< 2.0s post-TTS)
                 time_since_tts = time.perf_counter() - self.last_tts_end
                 if time_since_tts < self.POST_TTS_COOLDOWN_SEC:
                     if self.last_tts_output:
@@ -199,40 +311,163 @@ class AutonomousVoiceAgent:
                             continue
 
                 telemetry.increment("speech_events_detected")
-                telemetry.record_latency("time_stt_ms", t_stt_elapsed)
+                telemetry.record_latency("time_stt_ms", t_stt_ms)
 
-                # 3. Deterministic Pre-LLM Control Intent Check for EXIT
-                if ControlIntentDetector.is_exit(user_text):
-                    telemetry.increment("fastpath_exit_commands")
-                    telemetry.record_interaction(user_text, "EXIT")
-                    farewell = "Desactivando modo autónomo continuo. Hasta luego."
-                    print(f"\n[AURA]: {farewell}")
-                    self._speak(farewell)
-                    telemetry.record_latency(
-                        "time_turn_ms", (time.perf_counter() - t_turn_start) * 1000
+                if self._awaiting_exit_confirmation:
+                    elapsed = time.perf_counter() - self._exit_confirmation_time
+                    if elapsed > 15.0:
+                        self._awaiting_exit_confirmation = False
+                        timeout_msg = (
+                            "Tiempo de confirmación agotado. Modo autónomo continuo mantenido."
+                        )
+                        print(f"\n[AURA]: {timeout_msg}")
+                        t_tts_ms, t_playback_ms = self._speak(timeout_msg)
+                        continue
+
+                    lower_user = user_text.lower().strip()
+                    confirm_keywords = (
+                        "sí",
+                        "si",
+                        "afirmativo",
+                        "confirmo",
+                        "confirmar",
+                        "correcto",
+                        "de acuerdo",
+                        "cerrar",
+                        "salir",
+                        "salí",
+                        "sali",
+                        "chao",
+                        "bye",
+                        "ahora",
                     )
-                    break
 
-                # 4. Interruption check if barge-in triggered
-                self.interrupt_speaking()
+                    if any(kw in lower_user for kw in confirm_keywords):
+                        self._awaiting_exit_confirmation = False
+                        telemetry.increment("fastpath_exit_commands")
+                        telemetry.record_interaction(user_text, "EXIT_CONFIRMED")
+                        farewell = "Desactivando modo autónomo continuo. Hasta luego."
+                        print(f"\n[AURA]: {farewell}")
+                        t_tts_ms, t_playback_ms = self._speak(farewell)
+                        break
+                    else:
+                        self._awaiting_exit_confirmation = False
+                        cancel_msg = "Cancelado. Modo autónomo continuo mantenido."
+                        print(f"\n[AURA]: {cancel_msg}")
+                        t_tts_ms, t_playback_ms = self._speak(cancel_msg)
+                        continue
 
-                print(f"\n[Voz Detectada]: '{user_text}'")
-
-                # --- FAST PATH 1: GREETINGS (0 LLM Calls) ---
-                if ControlIntentDetector.is_greeting(user_text):
-                    telemetry.increment("fastpath_greetings")
-                    telemetry.record_interaction(user_text, "FASTPATH_GREETING")
-                    greeting_resp = ControlIntentDetector.get_greeting_response()
-                    print("  ⚡ [FAST-PATH]: Saludo detectado (0 llamadas LLM)")
-                    print(f"[AURA]: {greeting_resp}")
-                    self._speak(greeting_resp)
-                    telemetry.record_latency(
-                        "time_turn_ms", (time.perf_counter() - t_turn_start) * 1000
+                if (
+                    self.is_low_quality_transcript(user_text)
+                    and not is_exit_cmd
+                    and not is_greeting_cmd
+                ):
+                    print(
+                        f"  🛑 [VOICE GUARD] Transcript rejected by quality filter ('{user_text}')"
                     )
                     continue
 
-                # --- FAST PATH 2: DIRECT MEMORY RECALL (0 LLM Calls) ---
-                if ControlIntentDetector.is_direct_memory_query(user_text):
+                if is_exit_cmd:
+                    self._awaiting_exit_confirmation = True
+                    print("\n  🛡 EXIT CONFIRMATION MODE")
+                    confirm_prompt = "¿Deseas cerrar AURA? Responde sí o no."
+                    print(f"[AURA]: {confirm_prompt}")
+                    t_tts_ms, t_playback_ms = self._speak(confirm_prompt)
+                    self._exit_confirmation_time = time.perf_counter()
+                    continue
+
+                self.interrupt_speaking()
+                print(f"\n[Voz Detectada]: '{user_text}'")
+
+                t_intent_0 = time.perf_counter()
+
+                # --- FAST PATH 1: GREETINGS (0 LLM Calls) ---
+                if ControlIntentDetector.is_greeting(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_greetings")
+                    telemetry.record_interaction(user_text, "FASTPATH_GREETING")
+                    greeting_resp = ControlIntentDetector.get_greeting_response()
+                    print("  ⚡ [FAST PATH ACTIVATED] type=greeting (0 llamadas LLM)")
+                    print(f"[AURA]: {greeting_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(greeting_resp)
+                    continue
+
+                # --- FAST PATH 2: TIME & DATE (0 LLM Calls) ---
+                if ControlIntentDetector.is_time_query(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_time")
+                    telemetry.record_interaction(user_text, "FASTPATH_TIME")
+                    time_resp = ControlIntentDetector.get_time_response(user_text)
+                    print("  ⚡ [FAST PATH ACTIVATED] type=time (0 llamadas LLM)")
+                    print(f"[AURA]: {time_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(time_resp)
+                    continue
+
+                # --- FAST PATH 3: CALCULATOR & MATH (0 LLM Calls) ---
+                if ControlIntentDetector.is_calculator_query(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_calculator")
+                    telemetry.record_interaction(user_text, "FASTPATH_CALCULATOR")
+                    calc_resp = ControlIntentDetector.get_calculator_response(user_text)
+                    print("  ⚡ [FAST PATH ACTIVATED] type=calculator (0 llamadas LLM)")
+                    print(f"[AURA]: {calc_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(calc_resp)
+                    continue
+
+                # --- FAST PATH 4: REMINDER LISTING (0 LLM Calls) ---
+                if ControlIntentDetector.is_reminder_list_query(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_reminder_list")
+                    telemetry.record_interaction(user_text, "FASTPATH_REMINDER_LIST")
+                    if self.scheduler and hasattr(self.scheduler, "list_jobs"):
+                        jobs = self.scheduler.list_jobs()
+                        if jobs:
+                            rem_resp = f"Tienes {len(jobs)} recordatorios activos programados."
+                        else:
+                            rem_resp = "No tienes ningún recordatorio pendiente en este momento."
+                    else:
+                        rem_resp = "No tienes recordatorios activos registrados."
+                    print("  ⚡ [FAST PATH ACTIVATED] type=reminder_list (0 llamadas LLM)")
+                    print(f"[AURA]: {rem_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(rem_resp)
+                    continue
+
+                # --- FAST PATH 5: REMINDER CREATION (0 LLM Calls) ---
+                if ControlIntentDetector.is_reminder_query(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_reminder")
+                    telemetry.record_interaction(user_text, "FASTPATH_REMINDER")
+                    rem_desc, delay_sec = ControlIntentDetector.parse_reminder_query(user_text)
+                    self._schedule_reminder({"text": rem_desc, "delay_seconds": delay_sec})
+                    delay_int = int(delay_sec)
+                    if delay_sec < 60:
+                        conf_resp = f"Claro, te recordaré '{rem_desc}' en {delay_int} segundos."
+                    else:
+                        conf_resp = (
+                            f"Claro, te recordaré '{rem_desc}' en {delay_int // 60} minutos."
+                        )
+                    print("  ⚡ [FAST PATH ACTIVATED] type=reminder (0 llamadas LLM)")
+                    print(f"[AURA]: {conf_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(conf_resp)
+                    continue
+
+                # --- FAST PATH 6: WEATHER (0 LLM Calls) ---
+                if ControlIntentDetector.is_weather_query(user_text):
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+                    telemetry.increment("fastpath_weather")
+                    telemetry.record_interaction(user_text, "FASTPATH_WEATHER")
+                    weather_resp = ControlIntentDetector.get_weather_response(user_text)
+                    print("  ⚡ [FAST PATH ACTIVATED] type=weather (0 llamadas LLM)")
+                    print(f"[AURA]: {weather_resp}")
+                    t_tts_ms, t_playback_ms = self._speak(weather_resp)
+                    continue
+
+                # --- FAST PATH 7: USER PROFILE & MEMORY QUERIES (0 LLM Calls) ---
+                is_prof_query = ControlIntentDetector.is_user_profile_query(user_text)
+                is_mem_query = ControlIntentDetector.is_direct_memory_query(user_text)
+
+                if is_prof_query or is_mem_query:
+                    t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
                     memory_answered = False
                     if self.cognition is not None and getattr(self.cognition, "_container", None):
                         from ..memory import MemoryModule
@@ -240,14 +475,20 @@ class AutonomousVoiceAgent:
                         container = self.cognition._container
                         if container and container.has(MemoryModule):
                             mem_mod = container.resolve(MemoryModule)
+                            t_ret_0 = time.perf_counter()
                             res_retrieval = mem_mod.retrieval.query(user_text)
+                            t_retrieval_ms = (time.perf_counter() - t_ret_0) * 1000
+
                             top_fact = res_retrieval.facts[0] if res_retrieval.facts else None
                             top_pref = (
                                 res_retrieval.preferences[0] if res_retrieval.preferences else None
                             )
 
-                            is_open_query = mem_mod.retrieval._is_open_recall_query(
-                                user_text, mem_mod.retrieval._get_query_tokens(user_text)
+                            is_open_query = (
+                                is_prof_query
+                                or mem_mod.retrieval._is_open_recall_query(
+                                    user_text, mem_mod.retrieval._get_query_tokens(user_text)
+                                )
                             )
 
                             if is_open_query and (
@@ -264,8 +505,6 @@ class AutonomousVoiceAgent:
                                     fact_dict[norm_p] = f.object_val
 
                                 profile_parts: list[str] = []
-
-                                # Nombre
                                 name_val = next(
                                     (
                                         v
@@ -277,7 +516,6 @@ class AutonomousVoiceAgent:
                                 if name_val:
                                     profile_parts.append(f"Nombre: {name_val}")
 
-                                # Edad
                                 age_val = next(
                                     (
                                         v
@@ -289,7 +527,6 @@ class AutonomousVoiceAgent:
                                 if age_val:
                                     profile_parts.append(f"Edad: {age_val}")
 
-                                # Ciudad
                                 city_val = next(
                                     (
                                         v
@@ -304,7 +541,6 @@ class AutonomousVoiceAgent:
                                 if city_val:
                                     profile_parts.append(f"Ciudad: {city_val}")
 
-                                # Actividad
                                 act_val = next(
                                     (
                                         v
@@ -316,21 +552,6 @@ class AutonomousVoiceAgent:
                                 if act_val:
                                     profile_parts.append(f"Actividad: {act_val}")
 
-                                # Ocupación
-                                occ_val = next(
-                                    (
-                                        v
-                                        for k, v in fact_dict.items()
-                                        if "ocupacion" in k
-                                        or "trabajo" in k
-                                        or "profesion" in k
-                                        or "empleo" in k
-                                    ),
-                                    None,
-                                )
-                                if occ_val:
-                                    profile_parts.append(f"Ocupación: {occ_val}")
-
                                 if profile_parts:
                                     ans = "Perfil de usuario: " + " | ".join(profile_parts) + "."
                                     print(
@@ -338,7 +559,7 @@ class AutonomousVoiceAgent:
                                         "(0 llamadas LLM)"
                                     )
                                     print(f"[AURA]: {ans}")
-                                    self._speak(ans)
+                                    t_tts_ms, t_playback_ms = self._speak(ans)
                                     memory_answered = True
 
                             if not memory_answered and top_fact and top_fact.confidence >= 0.50:
@@ -360,12 +581,6 @@ class AutonomousVoiceAgent:
                                     or "empleo" in norm_pred
                                 ):
                                     ans = f"Trabajas como {val}."
-                                elif (
-                                    "actividad" in norm_pred
-                                    or "estudio" in norm_pred
-                                    or "carrera" in norm_pred
-                                ):
-                                    ans = f"Tu actividad es {val}."
                                 else:
                                     ans = f"Tu {top_fact.predicate} es {val}."
 
@@ -374,7 +589,7 @@ class AutonomousVoiceAgent:
                                     f"(0 llamadas LLM, conf={top_fact.confidence:.2f})"
                                 )
                                 print(f"[AURA]: {ans}")
-                                self._speak(ans)
+                                t_tts_ms, t_playback_ms = self._speak(ans)
                                 memory_answered = True
                             elif not memory_answered and top_pref:
                                 ans = f"Tu preferencia para {top_pref.key} es {top_pref.value}."
@@ -383,21 +598,21 @@ class AutonomousVoiceAgent:
                                     "(0 llamadas LLM)"
                                 )
                                 print(f"[AURA]: {ans}")
-                                self._speak(ans)
+                                t_tts_ms, t_playback_ms = self._speak(ans)
                                 memory_answered = True
 
                     if memory_answered:
                         telemetry.increment("fastpath_memory_queries")
                         telemetry.record_interaction(user_text, "FASTPATH_MEMORY")
-                        telemetry.record_latency(
-                            "time_turn_ms", (time.perf_counter() - t_turn_start) * 1000
-                        )
                         continue
 
+                t_intent_ms = (time.perf_counter() - t_intent_0) * 1000
+
                 # 5. Cognitive decision & response (Single-pass when cognition available)
+                t_llm_0 = time.perf_counter()
                 if self.cognition is not None:
-                    # SINGLE-PASS PATH: Directly run process_cognitive_cycle (1 LLM call)
                     cognition_result = self.cognition.process_cognitive_cycle(user_text)
+                    t_llm_ms = (time.perf_counter() - t_llm_0) * 1000
                     response_text = cognition_result.summary.strip()
                     action = (
                         "RESPOND"
@@ -418,12 +633,12 @@ class AutonomousVoiceAgent:
 
                     if action == "RESPOND" and response_text:
                         print(f"[AURA]: {response_text}")
-                        self._speak(response_text)
+                        t_tts_ms, t_playback_ms = self._speak(response_text)
                     elif action == "IGNORE":
                         print("  🤫 [AURA decidió guardar silencio]")
                 else:
-                    # LEGACY FALLBACK PATH: Standalone mode without CognitionModule
                     decision = self._make_decision(user_text)
+                    t_llm_ms = (time.perf_counter() - t_llm_0) * 1000
 
                     if self.on_decision is not None:
                         self.on_decision(decision)
@@ -438,7 +653,7 @@ class AutonomousVoiceAgent:
                     if action in ("RESPOND", "EXECUTE"):
                         if response_text:
                             print(f"[AURA]: {response_text}")
-                            self._speak(response_text)
+                            t_tts_ms, t_playback_ms = self._speak(response_text)
 
                         reminder = decision.get("reminder")
                         if isinstance(reminder, dict):
@@ -447,14 +662,35 @@ class AutonomousVoiceAgent:
                     elif action == "IGNORE":
                         print("  🤫 [AURA decidió guardar silencio]")
 
-                telemetry.record_latency(
-                    "time_turn_ms", (time.perf_counter() - t_turn_start) * 1000
-                )
-
             except Exception as exc:
                 telemetry.increment("voice_turn_failures")
                 print(f"  [ERROR] Fallo en ciclo de voz: {exc}")
                 time.sleep(0.3)
+            finally:
+                if t_turn_start > 0:
+                    t_total_ms = (time.perf_counter() - t_turn_start) * 1000
+                    sum_known = (
+                        t_vad_ms
+                        + t_stt_ms
+                        + t_intent_ms
+                        + t_retrieval_ms
+                        + t_llm_ms
+                        + t_tts_ms
+                        + t_playback_ms
+                    )
+                    t_queue_ms = max(0.0, t_total_ms - sum_known)
+                    self._log_pipeline_metrics(
+                        t_vad_ms,
+                        t_stt_ms,
+                        t_intent_ms,
+                        t_retrieval_ms,
+                        t_llm_ms,
+                        t_tts_ms,
+                        t_playback_ms,
+                        t_queue_ms,
+                        t_total_ms,
+                    )
+                    telemetry.record_latency("time_turn_ms", t_total_ms)
 
     def _schedule_reminder(self, reminder: dict[str, Any]) -> None:
         """Schedules a gentle reminder with robust text field validation."""
@@ -482,7 +718,7 @@ class AutonomousVoiceAgent:
 
         def _notify() -> None:
             msg = f"Hola, te recuerdo suavemente: {reminder_text}."
-            print(f"\n  ⏰ [RECORDATORIO AURA]: {msg}")
+            print(f"\n  [RECORDATORIO AURA]: {msg}")
             self._speak(msg)
 
         if self.scheduler is not None and hasattr(self.scheduler, "schedule_once"):
@@ -544,15 +780,29 @@ class AutonomousVoiceAgent:
             "reasoning": "Respuesta directa del modelo",
         }
 
-    def _speak(self, text: str) -> None:
-        """Speaks text using TTS with thread-safe lock and post-speech guard."""
+    def _speak(self, text: str) -> tuple[float, float]:
+        """Speaks text using TTS with thread-safe lock, returning (tts_synth_ms, playback_ms)."""
         with self._speech_lock:
             self._is_speaking = True
+        t_synth_ms = 0.0
+        t_play_ms = 0.0
         try:
             self.last_tts_output = text.strip().lower()
-            self.tts.speak(text)
+            t0 = time.perf_counter()
+            res = self.tts.synthesize(text)
+            t_synth_ms = (time.perf_counter() - t0) * 1000
+            if res.audio_bytes:
+                t1 = time.perf_counter()
+                if hasattr(self.tts, "_play_fallback"):
+                    self.tts._play_fallback(res.audio_bytes)
+                else:
+                    from .output import SoundDeviceOutputProvider
+
+                    SoundDeviceOutputProvider().play(res.audio_bytes)
+                t_play_ms = (time.perf_counter() - t1) * 1000
         finally:
             time.sleep(self.POST_TTS_COOLDOWN_SEC)
             self.last_tts_end = time.perf_counter()
             with self._speech_lock:
                 self._is_speaking = False
+        return t_synth_ms, t_play_ms

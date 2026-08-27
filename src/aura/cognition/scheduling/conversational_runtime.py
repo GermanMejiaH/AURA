@@ -275,7 +275,6 @@ class ConversationalRuntime:
                 resolved_tool_name = target_tool_name
                 resolved_kwargs = tool_kwargs or {}
             elif use_cognitive_provider:
-                # Retrieve available tool schemas for LLM cognitive proposal
                 available_tools_schema = [
                     {
                         "name": meta.name,

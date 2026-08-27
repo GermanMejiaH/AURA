@@ -93,15 +93,8 @@ class WorkingMemory:
         with self._lock:
             try:
                 conn = store._get_connection()
-                if session_id is None:
-                    cur = conn.execute(
-                        "SELECT session_id FROM memory_sessions ORDER BY updated_at DESC LIMIT 1"
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        session_id = row["session_id"]
-                    else:
-                        return 0
+                if not session_id:
+                    return 0
 
                 cur = conn.execute(
                     """

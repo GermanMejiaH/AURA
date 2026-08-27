@@ -26,10 +26,11 @@ def test_microphone_recorder_until_silence() -> None:
     fake_chunk = np.ones((1600, 1), dtype=np.int16) * 500
     mock_stream = MagicMock()
     mock_stream.__enter__.return_value = mock_stream
-    mock_stream.read.return_value = (fake_chunk, False)
+    silent_chunk = np.zeros((1600, 1), dtype=np.int16)
+    mock_stream.read.side_effect = [(fake_chunk, False)] * 6 + [(silent_chunk, False)] * 5
 
     with patch("sounddevice.InputStream", return_value=mock_stream):
-        audio_bytes = recorder.record_until_silence(max_duration_sec=0.3, silence_sec=0.2)
+        audio_bytes = recorder.record_until_silence(max_duration_sec=0.8, silence_sec=0.2)
         assert len(audio_bytes) > 44
         assert audio_bytes.startswith(b"RIFF")
 

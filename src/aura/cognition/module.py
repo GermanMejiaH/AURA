@@ -132,12 +132,17 @@ class CognitionModule(BaseModule):
                     target_store = resolved
 
             if target_store is not None:
-                hydrated_count = self.working_memory.hydrate_from_db(store=target_store)
-                if hydrated_count > 0:
-                    logger.info(
-                        f"Hydrated WorkingMemory with {hydrated_count} turns "
-                        "from persistent SQLite session"
+                sess_ctx = self.session_manager.get_context()
+                active_sess_id = sess_ctx.session_id if sess_ctx else None
+                if active_sess_id:
+                    hydrated_count = self.working_memory.hydrate_from_db(
+                        store=target_store, session_id=active_sess_id
                     )
+                    if hydrated_count > 0:
+                        logger.info(
+                            f"Hydrated WorkingMemory with {hydrated_count} turns "
+                            f"from active session '{active_sess_id}'"
+                        )
 
         logger.info(
             f"CognitionModule initialized [state={self.state_machine.state.value}, "
@@ -164,7 +169,7 @@ class CognitionModule(BaseModule):
         )
 
     def process_cognitive_cycle(self, input_text: str, source: str = "user") -> ReasoningResult:
-        """Runs cognitive cycle: Attention -> Intent -> Agentic -> Memory -> Context -> Tools."""
+        """Runs cognitive cycle: FastPaths -> Attention -> Intent -> Agentic -> Memory -> Context -> Tools."""
         logger = get_logger("CognitionModule")
         t_cycle_start = time.perf_counter()
         self.state_machine.transition_to(CognitiveState.THINKING, reason="processing_cycle")
@@ -188,6 +193,64 @@ class CognitionModule(BaseModule):
                     confidence=detected_intent.confidence,
                     raw_text=input_text,
                 )
+            )
+
+        # --- STEP 0.1: PRE-LLM FAST PATH DISPATCH (EXIT, GREETINGS, TIME, MATH) ---
+        from .intent import ControlIntentDetector
+        from ..telemetry import TelemetryManager
+
+        telemetry = TelemetryManager.get_instance()
+
+        if ControlIntentDetector.is_exit(input_text):
+            summary = "Hasta luego. Fue un placer conversar contigo."
+            self.working_memory.add_conversation_turn("user", input_text)
+            self.working_memory.add_conversation_turn("assistant", summary)
+            self.session_manager.record_turn()
+            self.state_machine.transition_to(CognitiveState.IDLE, reason="exit_fastpath")
+            telemetry.increment("fastpath_exit_commands")
+            return ReasoningResult(
+                summary=summary,
+                intent="exit",
+                confidence=1.0,
+            )
+
+        if ControlIntentDetector.is_greeting(input_text):
+            summary = ControlIntentDetector.get_greeting_response()
+            self.working_memory.add_conversation_turn("user", input_text)
+            self.working_memory.add_conversation_turn("assistant", summary)
+            self.session_manager.record_turn()
+            self.state_machine.transition_to(CognitiveState.IDLE, reason="greeting_fastpath")
+            telemetry.increment("fastpath_greetings")
+            return ReasoningResult(
+                summary=summary,
+                intent="greeting",
+                confidence=1.0,
+            )
+
+        if ControlIntentDetector.is_time_query(input_text):
+            summary = ControlIntentDetector.get_time_response(input_text)
+            self.working_memory.add_conversation_turn("user", input_text)
+            self.working_memory.add_conversation_turn("assistant", summary)
+            self.session_manager.record_turn()
+            self.state_machine.transition_to(CognitiveState.IDLE, reason="time_fastpath")
+            telemetry.increment("fastpath_time")
+            return ReasoningResult(
+                summary=summary,
+                intent="time",
+                confidence=1.0,
+            )
+
+        if ControlIntentDetector.is_calculator_query(input_text):
+            summary = ControlIntentDetector.get_calculator_response(input_text)
+            self.working_memory.add_conversation_turn("user", input_text)
+            self.working_memory.add_conversation_turn("assistant", summary)
+            self.session_manager.record_turn()
+            self.state_machine.transition_to(CognitiveState.IDLE, reason="calculator_fastpath")
+            telemetry.increment("fastpath_calculator")
+            return ReasoningResult(
+                summary=summary,
+                intent="calculator",
+                confidence=1.0,
             )
 
         # --- AURA 1.1 STAGE 3 AGENTIC ROUTING & PERSISTENT CONFIRMATION FLOW ---

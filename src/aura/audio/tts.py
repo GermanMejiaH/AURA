@@ -13,6 +13,10 @@ class TTSResult:
     audio_bytes: bytes
     text: str
     duration_seconds: float = 1.0
+    load_model_ms: float = 0.0
+    synthesize_ms: float = 0.0
+    save_audio_ms: float = 0.0
+    playback_ms: float = 0.0
 
 
 class TTSProvider(ABC):

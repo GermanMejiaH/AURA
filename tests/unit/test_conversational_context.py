@@ -33,7 +33,7 @@ def test_cognitive_context_builder_formats_12_turns() -> None:
 
     formatted = ctx.to_formatted_prompt()
     assert "Historial conversacional reciente:" in formatted
-    assert "[Usuario]: Pregunta 1" in formatted
+    assert "[Usuario]: Pregunta 5" in formatted
     assert "[AURA]: Respuesta 6" in formatted
     assert "Usuario: ¿Puedes resumir?" in formatted
 

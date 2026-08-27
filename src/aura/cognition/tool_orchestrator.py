@@ -40,13 +40,25 @@ class ToolOrchestrator:
         if registry is None:
             return []
 
-        logger = get_logger("ToolOrchestrator")
-        results: list[dict[str, Any]] = []
-
         # Determine tools to call (hybrid router)
         candidate_calls = self._determine_tool_calls(input_text, intent)
         if not candidate_calls:
             return []
+
+        return self.execute_parsed_tools(candidate_calls, registry)
+
+    def execute_parsed_tools(
+        self,
+        candidate_calls: list[tuple[str, dict[str, Any]]],
+        registry: ToolRegistry | None,
+        input_text: str = "",
+    ) -> list[dict[str, Any]]:
+        """Executes candidate tool calls against registry safely with confirmation checks."""
+        if registry is None or not candidate_calls:
+            return []
+
+        logger = get_logger("ToolOrchestrator")
+        results: list[dict[str, Any]] = []
 
         call_count = 0
         for tool_name, kwargs in candidate_calls:
@@ -59,6 +71,16 @@ class ToolOrchestrator:
 
             tool = registry.get(tool_name)
             if tool is None:
+                logger.warning(f"Attempted execution of unregistered tool '{tool_name}'. Skipping.")
+                results.append(
+                    {
+                        "tool_name": tool_name,
+                        "success": False,
+                        "output": None,
+                        "error": f"Herramienta '{tool_name}' no está registrada en el sistema",
+                    }
+                )
+                call_count += 1
                 continue
 
             # Publish ToolRequested event
@@ -135,6 +157,80 @@ class ToolOrchestrator:
             )
 
         return results
+
+    @staticmethod
+    def parse_tool_calls(text: str) -> list[tuple[str, dict[str, Any]]]:
+        """Parses tool calls from LLM text responses (e.g. <tool name="X">...</tool>)."""
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        # 1. Parse XML <tool name="NAME">BODY</tool> or <tool name="NAME" ... />
+        xml_matches = re.findall(
+            r"<tool\s+name=[\"']([^\"']+)[\"'](?:\s*\/|>(.*?)</tool>)",
+            text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        for name, body in xml_matches:
+            kwargs: dict[str, Any] = {}
+            if body and body.strip():
+                try:
+                    import json
+
+                    kwargs = json.loads(body.strip())
+                except Exception:
+                    # Key-value fallback
+                    kv_pairs = re.findall(r"(\w+)=[\"']([^\"']+)[\"']", body)
+                    for k, v in kv_pairs:
+                        kwargs[k] = v
+            calls.append((name.strip(), kwargs))
+
+        if calls:
+            return calls
+
+        # 2. Parse JSON {"tool": "NAME", "args": {...}}
+        try:
+            import json
+
+            json_match = re.search(
+                r"\{\s*\"tool\"\s*:\s*\"([^\"]+)\"(?:,\s*\"args\"\s*:\s*(\{.*?\}))?\s*\}",
+                text,
+                re.DOTALL,
+            )
+            if json_match:
+                t_name = json_match.group(1).strip()
+                t_args = json.loads(json_match.group(2)) if json_match.group(2) else {}
+                calls.append((t_name, t_args))
+        except Exception:
+            pass
+
+        return calls
+
+    @staticmethod
+    def strip_tool_markup(text: str) -> str:
+        """Strips raw tool XML or JSON blocks from output text before sending to user/TTS."""
+        if not text:
+            return ""
+
+        # Remove XML <tool ...></tool> or <tool .../>
+        clean = re.sub(
+            r"<tool\s+name=[\"'][^\"']+[\"'].*?(?:</tool>|/>)",
+            "",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Remove markdown JSON tool blocks
+        clean = re.sub(
+            r"```(?:json)?\s*\{\s*\"tool\"[^\}]+\}\s*```",
+            "",
+            clean,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Remove hallucinated fake CLI commands and log files
+        fake_cmd_pat = r"(?:sonido_test|esonia_test|donilla_test|/var/log/[a-zA-Z0-9_\-\.]+)"
+        if re.search(fake_cmd_pat, clean):
+            clean = re.sub(fake_cmd_pat, "", clean)
+        # Collapse multiple spaces and newlines
+        clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+        return clean
 
     def _determine_tool_calls(
         self, input_text: str, intent: Intent

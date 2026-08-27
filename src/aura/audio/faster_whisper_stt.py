@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import tempfile
 from typing import TYPE_CHECKING, Any
 
@@ -20,8 +21,11 @@ class FasterWhisperSTTProvider(STTProvider):
         model_size_or_path: str | None = None,
         device: str | None = None,
         compute_type: str | None = None,
+        beam_size: int = 1,
         default_transcript: str = "",
-        initial_prompt: str = "",
+        initial_prompt: str = (
+            "Transcripción limpia y exacta en español conversacional sin omitir palabras:"
+        ),
         vad_filter: bool = False,
         preferences_memory: UserPreferencesMemory | None = None,
     ) -> None:
@@ -41,6 +45,7 @@ class FasterWhisperSTTProvider(STTProvider):
             if compute_type is not None
             else (config.get_typed("stt.compute_type", str, "int8") if config else "int8")
         )
+        self.beam_size = beam_size
         self.default_transcript = default_transcript
         self.initial_prompt = initial_prompt
         self.vad_filter = vad_filter
@@ -116,12 +121,45 @@ class FasterWhisperSTTProvider(STTProvider):
                 )
         return self._model
 
+    def warmup(self) -> None:
+        """Pre-initializes the Whisper model and executes a dummy inference
+        to eliminate cold start latency during the first interaction."""
+        import io
+        import wave
+
+        from ..logging import get_logger
+
+        logger = get_logger("FasterWhisperSTTProvider")
+        logger.info(f"[STT WARMUP] Initializing FasterWhisper model '{self.model_size_or_path}'...")
+        self._get_model()
+
+        # Build 0.5s dummy WAV header + PCM silence
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(bytes(16000))
+        dummy_wav = buf.getvalue()
+
+        try:
+            self.transcribe(dummy_wav, language="es")
+            logger.info("[STT WARMUP] FasterWhisper model warm-up completed successfully.")
+        except Exception as exc:
+            logger.warning(f"[STT WARMUP] FasterWhisper warm-up warning: {exc}")
+
     def transcribe(
         self,
         audio: AudioData | bytes,
         language: str = "es",
     ) -> STTResult:
         import re
+        import time
+
+        from ..logging import get_logger
+
+        logger = get_logger("FasterWhisperSTTProvider")
+        t0 = time.perf_counter()
 
         raw_bytes = audio.raw_data if isinstance(audio, AudioData) else audio
 
@@ -133,6 +171,7 @@ class FasterWhisperSTTProvider(STTProvider):
                 language=language,
             )
 
+        logger.info(f"[STT START] model={self.model_size_or_path} bytes={len(raw_bytes)}")
         model = self._get_model()
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -143,8 +182,8 @@ class FasterWhisperSTTProvider(STTProvider):
             effective_prompt = self._get_effective_prompt()
             kwargs: dict[str, Any] = {
                 "language": language,
-                "beam_size": 2,
-                "best_of": 2,
+                "beam_size": self.beam_size,
+                "best_of": self.beam_size,
             }
             if effective_prompt:
                 kwargs["initial_prompt"] = effective_prompt
@@ -172,9 +211,25 @@ class FasterWhisperSTTProvider(STTProvider):
                     logger.error(f"FasterWhisper transcription failed: {exc}")
                     return STTResult(text="", confidence=0.0, language=language)
 
-            # Check no_speech_prob from Whisper model to reject silence hallucinations
-            no_speech = getattr(info, "no_speech_prob", 0.0)
-            if isinstance(no_speech, (float, int)) and no_speech > 0.45:
+            raw_no_speech = getattr(info, "no_speech_prob", 0.0)
+            no_speech = float(raw_no_speech) if type(raw_no_speech) in (int, float) else 0.0
+
+            raw_logprob = (
+                sum(getattr(s, "avg_logprob", 0.0) for s in segment_list) / len(segment_list)
+                if segment_list
+                else 0.0
+            )
+            avg_logprob = float(raw_logprob) if type(raw_logprob) in (int, float) else -0.1
+
+            # TASK 2: Whisper Confidence Gating
+            # Calibrated for desktop mic: reject if no_speech_prob > 0.75 or logprob < -2.0
+            if no_speech > 0.75 or (segment_list and avg_logprob < -2.0):
+                from ..logging import get_logger
+
+                get_logger("FasterWhisperSTTProvider").warning(
+                    "🛑 [STT GUARD] Rejected low-confidence transcript "
+                    f"(no_speech_prob={no_speech:.2f}, avg_logprob={avg_logprob:.2f})"
+                )
                 return STTResult(text="", confidence=0.0, language=language)
 
             transcript = " ".join([s.text.strip() for s in segment_list]).strip()
@@ -207,12 +262,18 @@ class FasterWhisperSTTProvider(STTProvider):
                     transcript,
                     flags=re.IGNORECASE,
                 )
-            confidence = (
+            raw_conf = (
                 sum(getattr(s, "avg_logprob", 0.0) for s in segment_list) / len(segment_list)
                 if segment_list
-                else 0.95
+                else -0.05
             )
+            confidence = min(1.0, max(0.0, float(math.exp(raw_conf))))
             detected_lang = info.language if hasattr(info, "language") else language
+            t_stt_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                f"[STT END] transcript='{transcript}' lang={detected_lang} conf={confidence:.2f}"
+            )
+            logger.info(f"[STT LATENCY] {t_stt_ms:.2f}ms")
         finally:
             import os
 

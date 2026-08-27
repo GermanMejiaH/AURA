@@ -44,6 +44,10 @@ class TelemetryManager:
             "max_prompt_tokens": 0,
             "max_completion_tokens": 0,
             "token_record_count": 0,
+            "vad_ceiling_hits": 0,
+            "vad_speech_triggers": 0,
+            "vad_ambient_rms_last": 0,
+            "vad_dynamic_threshold_last": 0,
         }
         self._latencies: dict[str, LatencyMetric] = {
             "time_stt_ms": LatencyMetric("time_stt_ms"),

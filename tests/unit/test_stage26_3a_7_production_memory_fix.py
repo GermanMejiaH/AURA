@@ -101,20 +101,20 @@ def test_working_memory_history_window_capping() -> None:
 
 def test_adaptive_history_scaling_policy() -> None:
     """Verify max history turns for different intents."""
-    # Greeting -> 1 turn
-    assert get_max_history_turns(None, "hola") == 1
+    # Greeting -> 2 turns
+    assert get_max_history_turns(None, "hola") == 2
 
-    # Factual Question -> 2 turns
-    assert get_max_history_turns("QUESTION", "dónde está la oficina") == 2
+    # Factual Question -> 6 turns
+    assert get_max_history_turns("QUESTION", "dónde está la oficina") == 6
 
     # Natural Conversation -> 4 turns
     assert get_max_history_turns(None, "tengo 26 años") == 4
 
-    # Planning / Task -> 6 turns
-    assert get_max_history_turns("TASK_REQUEST", "crea un plan") == 6
+    # Planning / Task -> 8 turns
+    assert get_max_history_turns("TASK_REQUEST", "crea un plan") == 8
 
-    # Complex Recall / Reflection -> 8 turns
-    assert get_max_history_turns("MEMORY_QUERY", "qué recuerdas de mí") == 8
+    # Complex Recall / Reflection -> 12 turns
+    assert get_max_history_turns("MEMORY_QUERY", "qué recuerdas de mí") == 12
 
 
 def test_production_prompt_size_under_1000_tokens() -> None:

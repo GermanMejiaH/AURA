@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimates BPE tokens using tiktoken if available, or accurate BPE character density ratio."""
+    """Estimates BPE tokens using tiktoken if available,
+    or conservative BPE character density ratio."""
     if not text:
         return 0
     try:
@@ -25,8 +26,9 @@ def estimate_tokens(text: str) -> int:
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     except Exception:
-        # Realistic BPE ratio for Spanish text & markdown syntax (~3.2 chars/token)
-        return max(1, int(len(text) / 3.2))
+        # Conservative BPE ratio for Spanish text, XML tags, & markdown syntax (~2.0 chars/token).
+        # Ensures prompt token calculations do not underestimate provider BPE tokenizer usage.
+        return max(1, int(len(text) / 2.0))
 
 
 def get_max_history_turns(intent: Any | None, input_text: str = "") -> int:
@@ -109,6 +111,38 @@ class CognitiveContext:
     session_context: SessionContext | None = None
     conversation_context: ConversationContext | None = None
     intent: Any | None = None
+
+    def enforce_payload_protection(self, max_tokens: int = 3500) -> None:
+        """Truncates tool results, history, and episodes if prompt tokens exceed max_tokens."""
+        if self.get_total_prompt_tokens() <= max_tokens:
+            return
+
+        # 1. Truncate tool results outputs
+        if self.tool_results:
+            for tres in self.tool_results:
+                output = str(tres.get("output", ""))
+                if len(output) > 300:
+                    tres["output"] = output[:300] + "... [truncado]"
+
+        if self.get_total_prompt_tokens() <= max_tokens:
+            return
+
+        # 2. Truncate conversation history
+        if self.conversation_history:
+            self.conversation_history = self.conversation_history[-4:]
+
+        if self.get_total_prompt_tokens() <= max_tokens:
+            return
+
+        # 3. Truncate episodic memories
+        if self.relevant_episodes:
+            self.relevant_episodes = self.relevant_episodes[:1]
+
+        if self.get_total_prompt_tokens() <= max_tokens:
+            return
+
+        if self.conversation_history:
+            self.conversation_history = self.conversation_history[-2:]
 
     def to_system_prompt(self) -> str:
         """Formats identity, background context, memory, tools, and results into prompt."""
@@ -212,22 +246,33 @@ class CognitiveContext:
         return "\n".join(parts)
 
     def to_formatted_prompt(self) -> str:
-        """Formats conversational history and current input for LLM prompt."""
+        """Formats conversational history and current input for LLM prompt using budget history."""
         parts: list[str] = []
 
-        history_source = (
-            self.conversation_context.relevant_turns
-            if (self.conversation_context and self.conversation_context.relevant_turns)
-            else self.conversation_history
-        )
+        # Force ONLY budget-capped self.conversation_history to prevent unbudgeted history leakage
+        history_source = self.conversation_history
 
         if history_source:
-            max_h_turns = get_max_history_turns(self.intent, self.user_input)
+            max_h_turns = min(4, get_max_history_turns(self.intent, self.user_input))
             parts.append("Historial conversacional reciente:")
             for turn in history_source[-max_h_turns:]:
                 role = "Usuario" if turn.get("role") == "user" else "AURA"
                 parts.append(f"  [{role}]: {turn.get('content', '')}")
             parts.append("")
+
+        try:
+            from ..logging import get_logger
+
+            logger = get_logger("CognitiveContext")
+            turns_cnt = len(history_source) if history_source else 0
+            chars_cnt = (
+                sum(len(str(t.get("content", ""))) for t in history_source) if history_source else 0
+            )
+            logger.info(
+                f"[HISTORY SOURCE] source=conversation_history turns={turns_cnt} chars={chars_cnt}"
+            )
+        except Exception:
+            pass
 
         parts.append(f"Usuario: {self.user_input}")
         return "\n".join(parts)
@@ -253,7 +298,11 @@ class CognitiveContextBuilder:
         "pasados y la respuesta está presente en 'RECUERDOS DE MEMORIA PERSISTENTE DEL USUARIO', "
         "DEBES responder utilizando explícitamente dicha información. "
         "NUNCA afirmes que no recuerdas, que no tienes acceso a la información o que no puedes "
-        "recordar conversaciones pasadas si el dato está presente en la memoria."
+        "recordar conversaciones pasadas si el dato está presente en la memoria. "
+        "REGLA DE HERRAMIENTAS Y SEGURIDAD: NUNCA inventes comandos de consola "
+        "(como 'sonido_test', 'esonia_test'), archivos de log ni herramientas ficticias. "
+        "Si el usuario pide una acción de control de sistema para la cual no hay una "
+        "herramienta registrada, indica amablemente que no cuentas con esa capacidad."
     )
 
     def __init__(self, container: DependencyContainer | None = None) -> None:
@@ -448,6 +497,71 @@ class CognitiveContextBuilder:
             except Exception:
                 pass
 
+        # PRE-ASSEMBLY CONTEXT BUDGETING (MAX_CONTEXT_BUDGET = 2000 tokens)
+        # Budget allocations: System: 800, History: 400, Semantic: 300, Episodic: 300, Tools: 200
+        # 1. Trim Semantic Memories (max 300 tokens)
+        trimmed_memories: list[str] = []
+        mem_tok_count = 0
+        for m in relevant_memories:
+            t_cnt = estimate_tokens(m)
+            if mem_tok_count + t_cnt <= 300:
+                trimmed_memories.append(m)
+                mem_tok_count += t_cnt
+            else:
+                break
+        relevant_memories = trimmed_memories
+
+        # 2. Trim Episodic Memories (max 300 tokens, max 1 episode)
+        trimmed_episodes: list[Episode] = []
+        ep_tok_count = 0
+        for ep in relevant_episodes[:1]:
+            t_cnt = estimate_tokens(getattr(ep, "summary", ""))
+            if ep_tok_count + t_cnt <= 300:
+                trimmed_episodes.append(ep)
+                ep_tok_count += t_cnt
+        relevant_episodes = trimmed_episodes
+
+        # 3. Trim Available Tools (max 200 tokens)
+        trimmed_tools: list[dict[str, str]] = []
+        tool_tok_count = 0
+        for t in available_tools:
+            t_str = t.get("name", "") + " " + t.get("description", "")
+            t_cnt = estimate_tokens(t_str)
+            if tool_tok_count + t_cnt <= 200:
+                trimmed_tools.append(t)
+                tool_tok_count += t_cnt
+            else:
+                break
+        available_tools = trimmed_tools
+
+        # 4. Trim History Turns (max 400 tokens, max 4 turns)
+        trimmed_history: list[dict[str, str]] = []
+        hist_tok_count = 0
+        for turn in reversed(history[-4:]):
+            turn_str = str(turn.get("role", "")) + ": " + str(turn.get("content", ""))
+            t_cnt = estimate_tokens(turn_str)
+            if hist_tok_count + t_cnt <= 400:
+                trimmed_history.insert(0, turn)
+                hist_tok_count += t_cnt
+            else:
+                break
+        history = trimmed_history
+
+        # Also trim conversation_context.relevant_turns if present to enforce budget ceiling
+        if conversation_context and getattr(conversation_context, "relevant_turns", None):
+            rel_turns = conversation_context.relevant_turns
+            trimmed_rel: list[dict[str, str]] = []
+            rel_tok_count = 0
+            for turn in reversed(rel_turns[-4:]):
+                turn_str = str(turn.get("role", "")) + ": " + str(turn.get("content", ""))
+                t_cnt = estimate_tokens(turn_str)
+                if rel_tok_count + t_cnt <= 400:
+                    trimmed_rel.insert(0, turn)
+                    rel_tok_count += t_cnt
+                else:
+                    break
+            conversation_context.relevant_turns = trimmed_rel
+
         ctx_obj = CognitiveContext(
             system_instruction=instruction,
             user_input=input_text,
@@ -455,7 +569,7 @@ class CognitiveContextBuilder:
             world_entities=world_entities,
             relevant_memories=relevant_memories,
             relevant_episodes=relevant_episodes,
-            prioritized_goals=prioritized_goals,
+            prioritized_goals=prioritized_goals[:3],
             available_tools=available_tools,
             identity=identity_obj,
             session_context=session_obj,
@@ -467,36 +581,17 @@ class CognitiveContextBuilder:
             from ..logging import get_logger
 
             b_logger = get_logger("CognitiveContextBuilder")
-            max_h = get_max_history_turns(detected_intent, input_text)
-            hist_src = (
-                conversation_context.relevant_turns
-                if (conversation_context and conversation_context.relevant_turns)
-                else history
-            )
-            sel_hist = hist_src[-max_h:] if hist_src else []
-            h_turns = len(sel_hist)
-            h_text = " ".join(str(t.get("content", "")) for t in sel_hist)
-            h_tokens = estimate_tokens(h_text)
-            mem_text = " ".join(relevant_memories)
-            mem_tokens = estimate_tokens(mem_text)
-            ep_text = " ".join(getattr(ep, "summary", "") for ep in relevant_episodes)
-            ep_tokens = estimate_tokens(ep_text)
-            goal_text = " ".join(getattr(pg.goal, "description", "") for pg in prioritized_goals)
-            goal_tokens = estimate_tokens(goal_text)
-            tool_text = " ".join(
-                t.get("name", "") + " " + t.get("description", "") for t in available_tools
-            )
-            tool_tokens = estimate_tokens(tool_text)
-
+            ctx_obj.enforce_payload_protection(max_tokens=2000)
             sys_p = ctx_obj.to_system_prompt()
             fmt_p = ctx_obj.to_formatted_prompt()
             tot_p_tokens = estimate_tokens(sys_p + fmt_p)
+            tokens_saved = max(0, 3500 - tot_p_tokens)
 
             b_logger.info(
-                f"[CONTEXT BUILD] history_turns={h_turns} history_tokens={h_tokens} "
-                f"memory_tokens={mem_tokens} episode_tokens={ep_tokens} "
-                f"goal_tokens={goal_tokens} tool_tokens={tool_tokens} "
-                f"total_prompt_tokens={tot_p_tokens}"
+                f"[CONTEXT METRICS] history_tokens={hist_tok_count} "
+                f"memory_tokens={mem_tok_count} tool_tokens={tool_tok_count} "
+                f"episode_tokens={ep_tok_count} total_tokens={tot_p_tokens} "
+                f"tokens_saved={tokens_saved}"
             )
         except Exception:
             pass
